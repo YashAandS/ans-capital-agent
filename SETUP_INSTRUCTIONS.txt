@@ -1,0 +1,237 @@
+================================================================================
+  A&S CAPITAL AI AGENT — SETUP INSTRUCTIONS
+  (Step-by-step for first-time users)
+================================================================================
+
+WHAT THIS APP DOES
+------------------
+This is a web-based tool that helps you:
+  1. Fill out Eastview Sizer spreadsheets (RTL, DSCR, MF, GUC)
+  2. Generate underwriting conditions using AI + Eastview guidelines
+  3. Build Committee (IC) presentations from the A&S Capital template
+  4. Build Borrower-facing loan proposal presentations
+
+It runs locally on your computer in a web browser.
+
+
+================================================================================
+STEP 1: INSTALL PYTHON (if you don't have it already)
+================================================================================
+
+Check if Python is installed:
+  - Open "Terminal" (press Cmd + Space, type "Terminal", hit Enter)
+  - Type:  python3 --version
+  - If you see "Python 3.9" or higher, you're good — skip to Step 2
+
+If Python is NOT installed:
+  - Go to https://www.python.org/downloads/
+  - Click the big yellow "Download Python" button
+  - Open the downloaded .pkg file and follow the installer
+  - When done, close Terminal and open it again
+  - Type:  python3 --version  (should now show the version)
+
+
+================================================================================
+STEP 2: OPEN THE PROJECT FOLDER IN TERMINAL
+================================================================================
+
+Option A (easiest):
+  - Open Terminal (Cmd + Space → type "Terminal" → Enter)
+  - Type this exact command and press Enter:
+
+      cd ~/Downloads/ans_capital_agent
+
+Option B (drag and drop):
+  - Open Terminal
+  - Type:  cd  (with a space after it, don't press Enter yet)
+  - Open Finder, find the "ans_capital_agent" folder in Downloads
+  - Drag the folder icon onto the Terminal window
+  - Press Enter
+
+You should see your prompt change to show "ans_capital_agent".
+
+
+================================================================================
+STEP 3: INSTALL THE REQUIRED PACKAGES
+================================================================================
+
+In Terminal (make sure you're in the ans_capital_agent folder), type:
+
+    pip3 install -r requirements.txt
+
+This will download and install everything the app needs. It may take
+1-2 minutes. You'll see a lot of text scrolling — that's normal.
+
+If you get a permissions error, try:
+
+    pip3 install --user -r requirements.txt
+
+
+================================================================================
+STEP 4: ADD YOUR API KEYS
+================================================================================
+
+The app needs two API keys to work. Here's how to get them:
+
+A) ANTHROPIC API KEY (for Claude AI):
+   - Go to https://console.anthropic.com/
+   - Create an account or sign in
+   - Click "API Keys" in the left menu
+   - Click "Create Key" → copy the key (starts with "sk-ant-")
+   - You'll need to add a payment method (pay-per-use, usually a few
+     cents per request)
+
+B) TAVILY API KEY (for Zillow comps search):
+   - Go to https://tavily.com/
+   - Create a free account
+   - Go to your dashboard → copy your API key
+
+Now add the keys to the project:
+   - In Finder, open the "ans_capital_agent" folder
+   - Find the file called ".env" (it may be hidden — press Cmd+Shift+.
+     in Finder to show hidden files)
+   - Open ".env" with TextEdit (right-click → Open With → TextEdit)
+   - Replace the placeholder text with your actual keys:
+
+       ANTHROPIC_API_KEY=sk-ant-your-actual-key-here
+       TAVILY_API_KEY=tvly-your-actual-key-here
+
+   - Save the file (Cmd + S) and close TextEdit
+
+IMPORTANT: Do NOT share your .env file or API keys with anyone.
+
+
+================================================================================
+STEP 5: RUN THE APP
+================================================================================
+
+In Terminal (in the ans_capital_agent folder), type:
+
+    streamlit run app.py
+
+You should see something like:
+
+    You can now view your Streamlit app in your browser.
+    Local URL: http://localhost:8501
+
+Your web browser will automatically open with the app. If it doesn't,
+open your browser and go to:  http://localhost:8501
+
+
+================================================================================
+STEP 6: USING THE APP
+================================================================================
+
+The app has 4 tabs across the top:
+
+TAB 1 — SIZER FILLER
+   1. Pick the loan type (RTL, DSCR, MF, or GUC)
+   2. Fill in the deal details in the form
+   3. Click "Fill Sizer & Download"
+   4. Open the downloaded .xlsx file in Excel — all the formulas will
+      auto-calculate based on what you entered
+
+TAB 2 — UNDERWRITING CONDITIONS
+   1. Pick the loan type
+   2. Fill in deal details (property info, borrower info)
+   3. Click "Generate Conditions"
+   4. AI reads the correct Eastview guidelines and generates a list
+      of underwriting conditions for your deal
+   5. Copy/paste or download the conditions
+
+TAB 3 — COMMITTEE DECK
+   1. Fill in the deal info (address, loan amount, LTV, rate, etc.)
+   2. Optionally search for Zillow comps by entering the city/zip
+   3. Click "Build Committee Deck"
+   4. The app fills in the A&S Capital IC template and downloads
+      the .pptx file — open it in PowerPoint
+
+TAB 4 — BORROWER DECK
+   1. Fill in property and loan details
+   2. Click "Build Borrower Deck"
+   3. Download the borrower-facing proposal .pptx
+
+SIDEBAR (left side):
+   - Shows whether your API keys are configured
+   - Shows which template files are found
+   - Lets you adjust default interest rate, origination fee, and loan term
+
+
+================================================================================
+HOW TO STOP THE APP
+================================================================================
+
+   - Go back to Terminal
+   - Press Ctrl + C (hold Control, then press C)
+   - The app will stop and the browser page will say "connection lost"
+
+
+================================================================================
+HOW TO START IT AGAIN LATER
+================================================================================
+
+Every time you want to use the app:
+
+    1. Open Terminal
+    2. Type:  cd ~/Downloads/ans_capital_agent
+    3. Type:  streamlit run app.py
+    4. Use the app in your browser
+    5. When done: Ctrl + C in Terminal
+
+
+================================================================================
+PROJECT FILES REFERENCE
+================================================================================
+
+    ans_capital_agent/
+    ├── .env                    ← Your API keys (keep secret!)
+    ├── app.py                  ← Main app (the Streamlit UI)
+    ├── requirements.txt        ← List of packages needed
+    ├── SETUP_INSTRUCTIONS.txt  ← This file
+    ├── modules/
+    │   ├── sizer.py            ← Excel sizer filler logic
+    │   ├── underwriting.py     ← Underwriting conditions generator
+    │   ├── committee_deck.py   ← Committee deck builder
+    │   └── borrower_deck.py    ← Borrower deck builder
+    └── assets/
+        ├── EV RTL Sizer_Jan 26 (5) copy.xlsx
+        ├── EV DSCR G Sizer_2.9.26 (4) copy.xlsx
+        ├── EV MF Sizer_Jan 25 (5) copy.xlsx
+        ├── EV GUC Sizer_1.1 (3) copy.xlsx
+        ├── AS_Capital_IC_Template (1).pptx
+        ├── Eastview RTL Guidelines_v4.2 (1) (1).pdf
+        ├── Eastview DSCR Guidelines_v7.2 (1) (1).pdf
+        ├── Eastview MF Guidelines_v1.0 (1) (1).pdf
+        └── Eastview GUC Guidelines_v1.1 (2) (1) (1).pdf
+
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+PROBLEM: "command not found: pip3"
+FIX: Try:  python3 -m pip install -r requirements.txt
+
+PROBLEM: "command not found: streamlit"
+FIX: Try:  python3 -m streamlit run app.py
+
+PROBLEM: "ModuleNotFoundError: No module named 'streamlit'"
+FIX: Reinstall packages:  pip3 install -r requirements.txt
+
+PROBLEM: Sidebar shows "❌ ANTHROPIC_API_KEY" or "❌ TAVILY_API_KEY"
+FIX: Make sure your .env file has the correct keys without any extra
+     spaces or quotes. The format should be exactly:
+     ANTHROPIC_API_KEY=sk-ant-xxxxx
+     (no quotes around the key)
+
+PROBLEM: "Permission denied" when installing packages
+FIX: Add --user flag:  pip3 install --user -r requirements.txt
+
+PROBLEM: Excel file opens but shows #REF! errors
+FIX: This means the formulas are intact but some referenced sheets may
+     need data. Make sure you filled in all required fields in the form.
+
+PROBLEM: The browser page is blank or shows an error
+FIX: Check Terminal for error messages. The most common fix is to make
+     sure you're in the correct folder (cd ~/Downloads/ans_capital_agent)
+     before running streamlit run app.py.

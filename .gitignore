@@ -1,0 +1,26 @@
+# API keys — NEVER upload these
+.env
+
+# Mac system files
+.DS_Store
+**/.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE files
+.vscode/
+.idea/
+
+# Intake form (no longer used)
+assets/AS_Capital_Intake_Form.xlsx
