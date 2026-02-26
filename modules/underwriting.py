@@ -116,7 +116,7 @@ category and note timing (Prior to Funding / Prior to Closing / Prior to First D
 Reference specific guideline requirements where applicable."""
 
     response = client.messages.create(
-        model="claude-4-sonnet-20250514",
+        model="claude-4-opus-20250514",
         max_tokens=4096,
         system=system_prompt,
         messages=[{"role": "user", "content": user_message}],
