@@ -100,7 +100,7 @@ def parse_comps_with_claude(api_key: str, raw_comps: list[dict], subject_address
         comps_text += f"\nComp {i}:\nTitle: {c['title']}\nURL: {c['url']}\nSnippet: {c['snippet']}\n"
 
     response = client.messages.create(
-        model="claude-3-5-sonnet-20241022",
+        model="claude-4-sonnet-20250514",
         max_tokens=2048,
         system="""You are a real estate analyst at A&S Capital. Parse the search results into
 a clean comparable sales summary. For each valid comp, extract: Address, Sale Price,
@@ -122,7 +122,7 @@ def generate_investment_highlights(api_key: str, deal_details: dict) -> str:
     detail_text = "\n".join(f"{k}: {v}" for k, v in deal_details.items() if v)
 
     response = client.messages.create(
-        model="claude-3-5-sonnet-20241022",
+        model="claude-4-sonnet-20250514",
         max_tokens=1024,
         system="""You are writing investment highlights for an A&S Capital investment committee
 presentation. Produce 4-6 concise bullet points highlighting the key strengths of the deal.
