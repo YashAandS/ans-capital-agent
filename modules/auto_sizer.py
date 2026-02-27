@@ -16,15 +16,43 @@ import os
 from datetime import datetime
 
 import openpyxl
-from openpyxl.styles import PatternFill
 import pdfplumber
 from anthropic import Anthropic
 
 from modules.sizer import get_template_path, SIZER_MAPS, SIZER_TEMPLATES
 
 
-# Red fill for cells that AI couldn't populate
-RED_FILL = PatternFill(start_color="FF9999", end_color="FF9999", fill_type="solid")
+# ---------------------------------------------------------------------------
+# Cells with data-validation (dropdowns) that must NOT be overwritten.
+# These are critical for the sizer template algorithms / scoring logic.
+# Format: { (sheet_name, cell_ref), ... }
+# ---------------------------------------------------------------------------
+DROPDOWN_CELLS = {
+    # --- RTL ---
+    ("Sizer", "H57"), ("Sizer", "H58"), ("Sizer", "H59"), ("Sizer", "H60"), ("Sizer", "H61"),
+    ("Sizer", "W57"), ("Sizer", "W58"), ("Sizer", "W59"), ("Sizer", "W60"), ("Sizer", "W61"),
+    ("Sizer", "F26"), ("Sizer", "F31"), ("Sizer", "F36"), ("Sizer", "F41"),
+    ("Sizer", "E15"),
+    ("Summary", "G15"), ("Summary", "G16"), ("Summary", "G17"), ("Summary", "G26"),
+    # --- DSCR ---
+    ("Sizer", "R126"), ("Sizer", "R127"), ("Sizer", "R128"), ("Sizer", "R129"),
+    ("Sizer", "R124"),
+    ("Sizer", "G117"), ("Sizer", "G118"),
+    ("Sizer", "G20"),
+    ("Sizer", "G35"), ("Sizer", "G41"), ("Sizer", "G47"), ("Sizer", "G53"),
+    ("Sizer", "L71"), ("Sizer", "L72"), ("Sizer", "L73"), ("Sizer", "L74"),
+    ("Sizer", "L75"), ("Sizer", "L76"), ("Sizer", "L77"), ("Sizer", "L78"),
+    ("Property", "H5"), ("Property", "I5"), ("Property", "B5"),
+    ("Property", "AP5"), ("Property", "AV5"), ("Property", "BB5"),
+    # --- MF ---
+    ("Sizer", "G24"), ("Sizer", "G25"), ("Sizer", "G26"), ("Sizer", "G27"),
+    ("Sizer", "T23"),
+    ("Sizer", "G84"), ("Sizer", "G85"),
+    # --- GUC ---
+    ("Sizer", "G25"), ("Sizer", "G26"),
+    ("Sizer", "G58"), ("Sizer", "G59"), ("Sizer", "G60"),
+    ("Sizer", "G19"),
+}
 
 # Fields to skip when highlighting (these are optional / not always applicable)
 OPTIONAL_FIELDS = {
@@ -403,7 +431,9 @@ def fill_sizer_with_highlights(
     extracted: dict,
 ) -> tuple:
     """
-    Fill the sizer template and highlight unfilled (missing) cells in red.
+    Fill the sizer template with extracted data.
+    Skips cells with data-validation dropdowns to preserve template integrity.
+    Returns a list of missing fields (no red highlighting).
 
     Returns:
         (output: BytesIO, filled_count: int, missing_fields: list[str])
@@ -421,19 +451,20 @@ def fill_sizer_with_highlights(
         if sheet_name not in wb.sheetnames:
             continue
 
+        # Skip cells with dropdown data validation — never overwrite these
+        if (sheet_name, cell_ref) in DROPDOWN_CELLS:
+            continue
+
         ws = wb[sheet_name]
         value = extracted.get(field_name)
 
         if value is not None and value != "":
-            # Fill the cell
             ws[cell_ref] = value
             filled_count += 1
         else:
-            # Skip optional fields and rate fields — don't highlight those
+            # Track missing fields (skip optional ones)
             if field_name in OPTIONAL_FIELDS:
                 continue
-            # Highlight missing required cell in red
-            ws[cell_ref].fill = RED_FILL
             missing_fields.append(field_name)
 
     output = io.BytesIO()
