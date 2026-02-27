@@ -100,7 +100,7 @@ def parse_comps_with_claude(api_key: str, raw_comps: list[dict], subject_address
         comps_text += f"\nComp {i}:\nTitle: {c['title']}\nURL: {c['url']}\nSnippet: {c['snippet']}\n"
 
     response = client.messages.create(
-        model="claude-4-opus-20250514",
+        model="claude-4-sonnet-20250514",
         max_tokens=2048,
         system="""You are a real estate analyst at A&S Capital. Parse the search results into
 a clean comparable sales summary. For each valid comp, extract: Address, Sale Price,

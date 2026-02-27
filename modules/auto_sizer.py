@@ -289,7 +289,7 @@ def detect_loan_type(api_key: str, document_text: str) -> str:
     client = Anthropic(api_key=api_key)
 
     response = client.messages.create(
-        model="claude-4-opus-20250514",
+        model="claude-4-sonnet-20250514",
         max_tokens=50,
         system="You are a loan type classifier for a private lending company. Based on the document content, determine the loan type. Respond with ONLY one of these four values: RTL, DSCR, MF, GUC. Nothing else.",
         messages=[{
