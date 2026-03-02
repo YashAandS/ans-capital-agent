@@ -180,7 +180,7 @@ with st.sidebar:
 st.title("A&S Capital — Roberto Jr.")
 
 tab0, tab3 = st.tabs([
-    "⚡ Automatic Sizer",
+    "⚡ The Sizernator",
     "🏛️ Committee Deck",
 ])
 
@@ -189,7 +189,7 @@ tab0, tab3 = st.tabs([
 # TAB 0: AUTOMATIC SIZER FILLER
 # ===========================================================================
 with tab0:
-    st.header("Automatic Sizer Filler")
+    st.header("The Sizernator")
     st.caption("Drop any deal documents below — the AI will read everything, fill the correct sizer, and list anything it couldn't find.")
 
     if not api_ok:
