@@ -47,29 +47,50 @@ def _lookup_zip_code(api_key: str, address: str, city: str, state: str) -> str:
 # ---------------------------------------------------------------------------
 DROPDOWN_CELLS = {
     # --- RTL ---
+    # Property type (H57-H61), Change of use (W57-W61)
     ("Sizer", "H57"), ("Sizer", "H58"), ("Sizer", "H59"), ("Sizer", "H60"), ("Sizer", "H61"),
     ("Sizer", "W57"), ("Sizer", "W58"), ("Sizer", "W59"), ("Sizer", "W60"), ("Sizer", "W61"),
+    # Is guarantor? Yes/No (F26, F31, F36, F41)
     ("Sizer", "F26"), ("Sizer", "F31"), ("Sizer", "F36"), ("Sizer", "F41"),
+    # Closing Proceeds dropdown (E15)
     ("Sizer", "E15"),
+    # Loan Program (G15), Loan Term (G16), Interest Accrual (G17), Prepayment Penalty (G26)
     ("Summary", "G15"), ("Summary", "G16"), ("Summary", "G17"), ("Summary", "G26"),
+
     # --- DSCR ---
+    # Amortization (R126), Rate Type (R127), Low Perf Market (R128), Rate (R129)
     ("Sizer", "R126"), ("Sizer", "R127"), ("Sizer", "R128"), ("Sizer", "R129"),
+    # Prepayment Penalty (R124)
     ("Sizer", "R124"),
+    # Origination fee tier (G117), Property type (G118)
     ("Sizer", "G117"), ("Sizer", "G118"),
+    # Closing Proceeds dropdown (G20)
     ("Sizer", "G20"),
     # NOTE: DSCR FICO cells G35/G41/G47/G53 are dropdowns but we allow writing
     # because "Foreign National" is a valid dropdown value in the Pricing sheet.
+    # Condo warrantability Yes/No (L71-L78)
     ("Sizer", "L71"), ("Sizer", "L72"), ("Sizer", "L73"), ("Sizer", "L74"),
     ("Sizer", "L75"), ("Sizer", "L76"), ("Sizer", "L77"), ("Sizer", "L78"),
+    # Property sheet dropdowns
     ("Property", "H5"), ("Property", "I5"), ("Property", "B5"),
     ("Property", "AP5"), ("Property", "AV5"), ("Property", "BB5"),
+
     # --- MF ---
+    # Closing Proceeds (G24), Loan Program (G25), Loan Term (G26), Exit Strategy (G27)
     ("Sizer", "G24"), ("Sizer", "G25"), ("Sizer", "G26"), ("Sizer", "G27"),
+    # NOTE: State (G16) is a dropdown but we allow writing — AI provides valid 2-letter codes
+    # Change of use (T23)
     ("Sizer", "T23"),
+    # Leverage deductions Yes/No (G84, G85)
     ("Sizer", "G84"), ("Sizer", "G85"),
+
     # --- GUC ---
+    # Closing Proceeds (G25), Loan Term (G26)
     ("Sizer", "G25"), ("Sizer", "G26"),
+    # State abbreviation dropdown (G16) — same cell as MF
+    # Leverage deductions Yes/No (G58, G59, G60)
     ("Sizer", "G58"), ("Sizer", "G59"), ("Sizer", "G60"),
+    # Num units dropdown (G19)
     ("Sizer", "G19"),
 }
 
@@ -109,6 +130,9 @@ OPTIONAL_FIELDS = {
     "completed_rehab",
     # Rate fields (user fills in Excel)
     "loan_interest_rate", "borrower_pricing",
+    # Dropdown fields the user sets themselves in Excel
+    "closing_proceeds", "loan_term", "loan_program",
+    "interest_accrual_type", "prepay_option",
 }
 
 
