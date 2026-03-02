@@ -20,7 +20,7 @@ import openpyxl
 import pdfplumber
 from anthropic import Anthropic
 
-from modules.sizer import get_template_path, SIZER_MAPS, SIZER_TEMPLATES
+from modules.sizer import get_template_path, SIZER_MAPS, SIZER_TEMPLATES, _extract_x14_blocks, _patch_x14_into_output
 
 
 def _lookup_zip_code(api_key: str, address: str, city: str, state: str) -> str:
@@ -486,6 +486,10 @@ def fill_sizer_with_highlights(
     if not input_map:
         raise ValueError(f"Unknown loan type: {loan_type}")
 
+    # Step 1: Extract x14 dropdown blocks BEFORE openpyxl touches the file
+    x14_blocks = _extract_x14_blocks(template_path)
+
+    # Step 2: Load workbook and fill cells
     wb = openpyxl.load_workbook(template_path)
 
     filled_count = 0
@@ -511,9 +515,12 @@ def fill_sizer_with_highlights(
                 continue
             missing_fields.append(field_name)
 
+    # Step 3: Save (openpyxl will strip x14 dropdowns)
     output = io.BytesIO()
     wb.save(output)
-    output.seek(0)
+
+    # Step 4: Patch x14 dropdowns back in at ZIP level
+    output = _patch_x14_into_output(output, x14_blocks)
     return output, filled_count, missing_fields
 
 

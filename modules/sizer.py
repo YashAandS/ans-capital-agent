@@ -5,10 +5,15 @@ user-input cells. The workbooks contain formulas, VLOOKUPs to Zillow data,
 leverage grids, and scoring logic that compute everything automatically.
 
 Supported sizer types: RTL, DSCR, MF (Multifamily 5+), GUC (Ground Up Construction)
+
+IMPORTANT: The Eastview sizer templates use x14 extended data validation (dropdowns)
+which openpyxl strips out on save. We use a ZIP-level XML patch to restore them.
 """
 
 import io
 import os
+import re
+import zipfile
 from datetime import datetime
 from copy import copy
 import openpyxl
@@ -277,11 +282,85 @@ SIZER_MAPS = {
 
 # Map loan types to template filenames
 SIZER_TEMPLATES = {
-    "RTL": "EV RTL Sizer_Jan 26 (5) copy.xlsx",
-    "DSCR": "EV DSCR G Sizer_2.9.26 (4) copy.xlsx",
-    "MF": "EV MF Sizer_Jan 25 (5) copy.xlsx",
-    "GUC": "EV GUC Sizer_1.1 (3) copy.xlsx",
+    "RTL": "EV RTL Sizer_Jan 26 (5).xlsx",
+    "DSCR": "EV DSCR G Sizer_2.9.26 (4).xlsx",
+    "MF": "EV MF Sizer_Jan 25.xlsx",
+    "GUC": "EV GUC Sizer_1.1 (3).xlsx",
 }
+
+
+# ---------------------------------------------------------------------------
+# ZIP-level XML patching to preserve x14 dropdown validations
+# openpyxl strips these out on save — we extract them from the original
+# template and inject them back into the saved output.
+# ---------------------------------------------------------------------------
+
+def _extract_x14_blocks(template_path: str) -> dict:
+    """
+    Extract all x14 extLst blocks from the original template XLSX.
+    Returns a dict mapping sheet XML paths to their <extLst>...</extLst> XML.
+    """
+    x14_blocks = {}
+    with zipfile.ZipFile(template_path, "r") as zf:
+        for name in zf.namelist():
+            if name.startswith("xl/worksheets/") and name.endswith(".xml"):
+                xml_bytes = zf.read(name)
+                xml_str = xml_bytes.decode("utf-8")
+                # Find the <extLst> block that contains x14:dataValidations
+                match = re.search(
+                    r'(<extLst>.*?</extLst>)',
+                    xml_str,
+                    re.DOTALL,
+                )
+                if match and "x14:dataValidation" in match.group(1):
+                    x14_blocks[name] = match.group(1)
+    return x14_blocks
+
+
+def _patch_x14_into_output(output_bytes: io.BytesIO, x14_blocks: dict) -> io.BytesIO:
+    """
+    Take the openpyxl-saved XLSX (which lost x14 blocks) and inject
+    the original x14 extLst blocks back into the sheet XMLs.
+    """
+    if not x14_blocks:
+        return output_bytes
+
+    output_bytes.seek(0)
+    src_zip = zipfile.ZipFile(output_bytes, "r")
+    patched = io.BytesIO()
+    dst_zip = zipfile.ZipFile(patched, "w", zipfile.ZIP_DEFLATED)
+
+    for item in src_zip.infolist():
+        data = src_zip.read(item.filename)
+
+        if item.filename in x14_blocks:
+            xml_str = data.decode("utf-8")
+            ext_block = x14_blocks[item.filename]
+
+            # Inject <extLst> right before </worksheet>
+            if "</worksheet>" in xml_str:
+                xml_str = xml_str.replace(
+                    "</worksheet>",
+                    ext_block + "</worksheet>",
+                )
+
+                # Ensure xmlns:xr is declared on <worksheet> tag
+                # (needed for xr:uid attributes inside x14 validations)
+                if 'xmlns:xr=' not in xml_str:
+                    xml_str = xml_str.replace(
+                        'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"',
+                        'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+                        'xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision"',
+                    )
+
+            data = xml_str.encode("utf-8")
+
+        dst_zip.writestr(item, data)
+
+    src_zip.close()
+    dst_zip.close()
+    patched.seek(0)
+    return patched
 
 
 def fill_sizer(template_path: str, loan_type: str, inputs: dict) -> io.BytesIO:
@@ -301,7 +380,10 @@ def fill_sizer(template_path: str, loan_type: str, inputs: dict) -> io.BytesIO:
     if not input_map:
         raise ValueError(f"Unknown loan type: {loan_type}. Must be one of: {list(SIZER_MAPS.keys())}")
 
-    # Load workbook preserving formulas, styles, and VBA
+    # Step 1: Extract x14 dropdown blocks BEFORE openpyxl touches the file
+    x14_blocks = _extract_x14_blocks(template_path)
+
+    # Step 2: Load workbook and fill cells
     wb = openpyxl.load_workbook(template_path)
 
     filled_count = 0
@@ -320,10 +402,12 @@ def fill_sizer(template_path: str, loan_type: str, inputs: dict) -> io.BytesIO:
         ws[cell_ref] = value
         filled_count += 1
 
-    # Write to BytesIO
+    # Step 3: Save (openpyxl will strip x14 dropdowns)
     output = io.BytesIO()
     wb.save(output)
-    output.seek(0)
+
+    # Step 4: Patch x14 dropdowns back in at ZIP level
+    output = _patch_x14_into_output(output, x14_blocks)
     return output, filled_count
 
 
