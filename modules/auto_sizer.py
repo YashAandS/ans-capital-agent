@@ -13,6 +13,7 @@ Supports any combination of:
 import io
 import json
 import os
+import re
 from datetime import datetime
 
 import openpyxl
@@ -20,6 +21,23 @@ import pdfplumber
 from anthropic import Anthropic
 
 from modules.sizer import get_template_path, SIZER_MAPS, SIZER_TEMPLATES
+
+
+def _lookup_zip_code(api_key: str, address: str, city: str, state: str) -> str:
+    """Use Claude (Sonnet) to find a ZIP code via web-style reasoning."""
+    if not address or not city:
+        return ""
+    client = Anthropic(api_key=api_key)
+    query = f"{address}, {city}, {state}" if state else f"{address}, {city}"
+    response = client.messages.create(
+        model="claude-4-sonnet-20250514",
+        max_tokens=20,
+        system="You are a US ZIP code lookup tool. Given a property address, respond with ONLY the 5-digit ZIP code. Nothing else. If you cannot determine it, respond with UNKNOWN.",
+        messages=[{"role": "user", "content": f"What is the ZIP code for: {query}"}],
+    )
+    result = response.content[0].text.strip()
+    match = re.search(r"\b(\d{5})\b", result)
+    return int(match.group(1)) if match else ""
 
 
 # ---------------------------------------------------------------------------
@@ -39,7 +57,8 @@ DROPDOWN_CELLS = {
     ("Sizer", "R124"),
     ("Sizer", "G117"), ("Sizer", "G118"),
     ("Sizer", "G20"),
-    ("Sizer", "G35"), ("Sizer", "G41"), ("Sizer", "G47"), ("Sizer", "G53"),
+    # NOTE: DSCR FICO cells G35/G41/G47/G53 are dropdowns but we allow writing
+    # because "Foreign National" is a valid dropdown value in the Pricing sheet.
     ("Sizer", "L71"), ("Sizer", "L72"), ("Sizer", "L73"), ("Sizer", "L74"),
     ("Sizer", "L75"), ("Sizer", "L76"), ("Sizer", "L77"), ("Sizer", "L78"),
     ("Property", "H5"), ("Property", "I5"), ("Property", "B5"),
@@ -382,7 +401,8 @@ RULES:
 - For Yes/No fields, return "Yes" or "No"
 - If the guarantor name is a single full name and the loan type is DSCR (which needs first/last separately), split it
 - If documents have conflicting values, prefer the most recent or most authoritative source (appraisal > broker sheet)
-- Extract EVERYTHING you can find — the more fields you fill, the better""",
+- Extract EVERYTHING you can find — the more fields you fill, the better
+- IMPORTANT: If the borrower/guarantor is a Foreign National (non-US citizen without a US credit history), set their FICO field to the string "Foreign National" instead of a number""",
         messages=[{
             "role": "user",
             "content": f"""Extract the following fields for a {loan_type} loan from these documents.
@@ -508,7 +528,61 @@ def auto_fill_sizer(
     # Step 3: Extract fields using AI across all documents
     extracted = extract_fields_from_documents(api_key, document_text, loan_type)
 
-    # Step 4: Fill the sizer template with red highlights for missing fields
+    # Step 4: Post-processing — auto-fill dates, ZIP lookup, Foreign National
+    today_str = datetime.now().strftime("%Y-%m-%d")
+
+    # --- Auto-fill appraisal date and credit report date with today ---
+    APPRAISAL_DATE_FIELDS = {
+        "prop1_appraisal_date", "prop_appraisal_date", "appraisal_date",
+    }
+    CREDIT_DATE_FIELDS = {
+        "guarantor_1_credit_date", "guarantor_2_credit_date",
+        "guarantor_3_credit_date", "guarantor_4_credit_date",
+    }
+    input_map = SIZER_MAPS.get(loan_type, {})
+    for field in APPRAISAL_DATE_FIELDS:
+        if field in input_map and not extracted.get(field):
+            extracted[field] = today_str
+    for field in CREDIT_DATE_FIELDS:
+        if field in input_map and not extracted.get(field):
+            # Only fill if the corresponding guarantor exists
+            gnum = field.split("_")[1]  # "1", "2", etc.
+            name_keys = [f"guarantor_{gnum}_name", f"guarantor_{gnum}_first"]
+            if any(extracted.get(k) for k in name_keys):
+                extracted[field] = today_str
+
+    # --- Foreign National: write "Foreign National" to FICO cells ---
+    FICO_FIELDS = {
+        "guarantor_1_fico", "guarantor_2_fico",
+        "guarantor_3_fico", "guarantor_4_fico",
+    }
+    for field in FICO_FIELDS:
+        val = extracted.get(field)
+        if isinstance(val, str) and "foreign" in val.lower():
+            extracted[field] = "Foreign National"
+
+    # --- ZIP code lookup if missing ---
+    ZIP_FIELD_SETS = {
+        "RTL": ("prop1_zip", "prop1_address", "prop1_city", "prop1_state"),
+        "DSCR": ("prop_zip", "prop_address", "prop_city", "prop_state"),
+        "MF": ("zip_code", "address", "city", "state"),
+        "GUC": ("zip_code", "address", "city", "state"),
+    }
+    if loan_type in ZIP_FIELD_SETS:
+        zip_field, addr_field, city_field, state_field = ZIP_FIELD_SETS[loan_type]
+        if not extracted.get(zip_field):
+            addr = extracted.get(addr_field, "")
+            city = extracted.get(city_field, "")
+            state = extracted.get(state_field, "")
+            if addr and city:
+                try:
+                    zip_val = _lookup_zip_code(api_key, addr, city, state)
+                    if zip_val:
+                        extracted[zip_field] = zip_val
+                except Exception:
+                    pass  # Non-critical — skip if lookup fails
+
+    # Step 5: Fill the sizer template
     template_path = get_template_path(assets_dir, loan_type)
     sizer_bytes, filled_count, missing_fields = fill_sizer_with_highlights(
         template_path, loan_type, extracted

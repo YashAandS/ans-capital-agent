@@ -12,7 +12,6 @@ from datetime import datetime
 import streamlit as st
 from dotenv import load_dotenv
 
-from modules.sizer import SIZER_TEMPLATES
 from modules.auto_sizer import auto_fill_sizer
 from modules.committee_deck import build_committee_deck
 
@@ -64,7 +63,7 @@ IC_TEMPLATE = os.path.join(ASSETS_DIR, "AS_Capital_IC_Template (1).pptx")
 LOGO_PATH = os.path.join(ASSETS_DIR, "as_logo.png")
 
 st.set_page_config(
-    page_title="A&S Capital Agent",
+    page_title="Roberto Jr. — A&S Capital",
     page_icon="🏦",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -161,38 +160,16 @@ st.markdown("""
 # ---------------------------------------------------------------------------
 # Sidebar
 # ---------------------------------------------------------------------------
+api_ok = bool(ANTHROPIC_API_KEY and ANTHROPIC_API_KEY != "your-anthropic-api-key-here")
+tavily_ok = bool(TAVILY_API_KEY and TAVILY_API_KEY != "your-tavily-api-key-here")
+
 with st.sidebar:
     if os.path.exists(LOGO_PATH):
         st.image(LOGO_PATH, use_container_width=True)
     else:
         st.title("A&S Capital")
+    st.markdown("### Roberto Jr.")
     st.caption("AI-Powered Deal Agent")
-    st.divider()
-
-    api_ok = bool(ANTHROPIC_API_KEY and ANTHROPIC_API_KEY != "your-anthropic-api-key-here")
-    tavily_ok = bool(TAVILY_API_KEY and TAVILY_API_KEY != "your-tavily-api-key-here")
-
-    st.markdown("**API Status**")
-    st.markdown(f"{'✅' if api_ok else '❌'}  Anthropic (Claude)")
-    st.markdown(f"{'✅' if tavily_ok else '⚠️'}  Tavily {'(needed for comps)' if not tavily_ok else ''}")
-
-    if not api_ok:
-        st.warning("Add your ANTHROPIC_API_KEY to the .env file.")
-
-    st.divider()
-
-    # Check which asset files are present
-    st.markdown("**Template Files**")
-    for label, filename in [
-        ("RTL Sizer", SIZER_TEMPLATES.get("RTL")),
-        ("DSCR Sizer", SIZER_TEMPLATES.get("DSCR")),
-        ("MF Sizer", SIZER_TEMPLATES.get("MF")),
-        ("GUC Sizer", SIZER_TEMPLATES.get("GUC")),
-        ("IC Template", "AS_Capital_IC_Template (1).pptx"),
-    ]:
-        path = os.path.join(ASSETS_DIR, filename) if filename else ""
-        exists = os.path.exists(path) if path else False
-        st.markdown(f"{'✅' if exists else '❌'}  {label}")
 
 
 
@@ -200,7 +177,7 @@ with st.sidebar:
 # ---------------------------------------------------------------------------
 # Main content
 # ---------------------------------------------------------------------------
-st.title("A&S Capital — Deal Agent")
+st.title("A&S Capital — Roberto Jr.")
 
 tab0, tab3 = st.tabs([
     "⚡ Automatic Sizer",
@@ -283,6 +260,7 @@ with tab0:
                     "amortization", "rate_type",
                     "prop_sqft", "prop_appraisal_date", "prop1_appraisal_date",
                     "appraisal_date", "prop1_pre_rehab_sqft",
+                    "post_completion_sqft", "verified_liquidity",
                 }
 
                 # Filter missing fields: remove optional and exempt ones
@@ -425,4 +403,4 @@ with tab3:
 # Footer
 # ---------------------------------------------------------------------------
 st.divider()
-st.caption("A&S Capital AI Agent — Built with Streamlit, Claude, and Tavily")
+st.caption("Roberto Jr. — A&S Capital AI Deal Agent")
