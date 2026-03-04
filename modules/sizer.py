@@ -283,7 +283,7 @@ SIZER_MAPS = {
 # Map loan types to template filenames
 SIZER_TEMPLATES = {
     "RTL": "EV RTL Sizer_Jan 26 (5).xlsx",
-    "DSCR": "EV DSCR G Sizer_2.9.26 (4).xlsx",
+    "DSCR": "EV DSCR G Sizer_3.3.26.xlsx",
     "MF": "EV MF Sizer_Jan 25.xlsx",
     "GUC": "EV GUC Sizer_1.1 (3).xlsx",
 }
