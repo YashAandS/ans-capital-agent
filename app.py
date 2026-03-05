@@ -244,8 +244,6 @@ with tab0:
                         loan_type_override=override,
                     )
 
-                st.success(f"Sizer filled — **{detected_type}** loan detected, **{filled_count}** cells written.")
-
                 # Fields exempt from the "Not Found" list (unimportant / user-fills-later)
                 EXEMPT_FIELDS = {
                     "closing_date", "entity_name", "num_guarantors", "num_owners",
@@ -269,31 +267,46 @@ with tab0:
                     if f not in EXEMPT_FIELDS
                 ]
 
-                # Layout: download button + not-found list side by side
-                dl_col, nf_col = st.columns([1, 2])
+                # Persist results in session_state so they survive reruns (e.g. download click)
+                st.session_state["sizer_result"] = {
+                    "sizer_bytes": sizer_bytes,
+                    "detected_type": detected_type,
+                    "filled_count": filled_count,
+                    "display_missing": display_missing,
+                    "extracted": extracted,
+                }
 
-                with dl_col:
-                    st.download_button(
-                        "⬇️ Download Completed Sizer",
-                        data=sizer_bytes,
-                        file_name=f"AS_Capital_{detected_type}_Sizer_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    )
+        # ---- Display persisted results (survives download-click reruns) ----
+        if "sizer_result" in st.session_state:
+            res = st.session_state["sizer_result"]
 
-                with nf_col:
-                    if display_missing:
-                        st.markdown(f"**📝 Not Found ({len(display_missing)})** — fill these in Excel:")
-                        for field in display_missing:
-                            label = field.replace("_", " ").title()
-                            st.markdown(f"&nbsp;&nbsp;• {label}")
-                    else:
-                        st.success("✅ All important fields were found and filled!")
+            st.success(f"Sizer filled — **{res['detected_type']}** loan detected, **{res['filled_count']}** cells written.")
 
-                # Show what was extracted
-                with st.expander("📋 Extracted Fields (click to review)", expanded=False):
-                    for k, v in extracted.items():
-                        label = k.replace("_", " ").title()
-                        st.markdown(f"**{label}:** {v}")
+            # Layout: download button + not-found list side by side
+            dl_col, nf_col = st.columns([1, 2])
+
+            with dl_col:
+                st.download_button(
+                    "⬇️ Download Completed Sizer",
+                    data=res["sizer_bytes"],
+                    file_name=f"AS_Capital_{res['detected_type']}_Sizer_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+
+            with nf_col:
+                if res["display_missing"]:
+                    st.markdown(f"**📝 Not Found ({len(res['display_missing'])})** — fill these in Excel:")
+                    for field in res["display_missing"]:
+                        label = field.replace("_", " ").title()
+                        st.markdown(f"&nbsp;&nbsp;• {label}")
+                else:
+                    st.success("✅ All important fields were found and filled!")
+
+            # Show what was extracted
+            with st.expander("📋 Extracted Fields (click to review)", expanded=False):
+                for k, v in res["extracted"].items():
+                    label = k.replace("_", " ").title()
+                    st.markdown(f"**{label}:** {v}")
 
 
 
