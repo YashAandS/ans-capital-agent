@@ -487,7 +487,7 @@ def fill_sizer_with_highlights(
         raise ValueError(f"Unknown loan type: {loan_type}")
 
     # Step 1: Extract x14 dropdown blocks BEFORE openpyxl touches the file
-    x14_blocks = _extract_x14_blocks(template_path)
+    x14_blocks, ws_tags = _extract_x14_blocks(template_path)
 
     # Step 2: Load workbook and fill cells
     wb = openpyxl.load_workbook(template_path)
@@ -520,7 +520,7 @@ def fill_sizer_with_highlights(
     wb.save(output)
 
     # Step 4: Patch x14 dropdowns back in at ZIP level
-    output = _patch_x14_into_output(output, x14_blocks)
+    output = _patch_x14_into_output(output, x14_blocks, ws_tags)
     return output, filled_count, missing_fields
 
 

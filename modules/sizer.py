@@ -295,32 +295,43 @@ SIZER_TEMPLATES = {
 # template and inject them back into the saved output.
 # ---------------------------------------------------------------------------
 
-def _extract_x14_blocks(template_path: str) -> dict:
+def _extract_x14_blocks(template_path: str) -> tuple:
     """
-    Extract all x14 extLst blocks from the original template XLSX.
-    Returns a dict mapping sheet XML paths to their <extLst>...</extLst> XML.
+    Extract x14 extLst blocks AND original <worksheet> opening tags from the
+    original template XLSX before openpyxl destroys them.
+
+    Returns:
+        (x14_blocks: dict, ws_tags: dict)
+        - x14_blocks maps sheet XML path → <extLst>...</extLst> XML string
+        - ws_tags maps sheet XML path → original <worksheet ...> opening tag
     """
     x14_blocks = {}
+    ws_tags = {}
     with zipfile.ZipFile(template_path, "r") as zf:
         for name in zf.namelist():
             if name.startswith("xl/worksheets/") and name.endswith(".xml"):
                 xml_bytes = zf.read(name)
                 xml_str = xml_bytes.decode("utf-8")
                 # Find the <extLst> block that contains x14:dataValidations
-                match = re.search(
+                ext_match = re.search(
                     r'(<extLst>.*?</extLst>)',
                     xml_str,
                     re.DOTALL,
                 )
-                if match and "x14:dataValidation" in match.group(1):
-                    x14_blocks[name] = match.group(1)
-    return x14_blocks
+                if ext_match and "x14:dataValidation" in ext_match.group(1):
+                    x14_blocks[name] = ext_match.group(1)
+                    # Also capture the original <worksheet ...> opening tag
+                    # which has all the namespace declarations Excel needs
+                    tag_match = re.search(r'(<worksheet\s[^>]*>)', xml_str)
+                    if tag_match:
+                        ws_tags[name] = tag_match.group(1)
+    return x14_blocks, ws_tags
 
 
-def _patch_x14_into_output(output_bytes: io.BytesIO, x14_blocks: dict) -> io.BytesIO:
+def _patch_x14_into_output(output_bytes: io.BytesIO, x14_blocks: dict, ws_tags: dict) -> io.BytesIO:
     """
-    Take the openpyxl-saved XLSX (which lost x14 blocks) and inject
-    the original x14 extLst blocks back into the sheet XMLs.
+    Take the openpyxl-saved XLSX (which lost x14 blocks and namespace
+    declarations) and restore both from the originals.
     """
     if not x14_blocks:
         return output_bytes
@@ -337,21 +348,18 @@ def _patch_x14_into_output(output_bytes: io.BytesIO, x14_blocks: dict) -> io.Byt
             xml_str = data.decode("utf-8")
             ext_block = x14_blocks[item.filename]
 
+            # Restore the original <worksheet> opening tag with all namespaces
+            # (mc:Ignorable, xmlns:xr, xmlns:mc, etc. that Excel requires)
+            if item.filename in ws_tags:
+                original_tag = ws_tags[item.filename]
+                xml_str = re.sub(r'<worksheet\s[^>]*>', original_tag, xml_str, count=1)
+
             # Inject <extLst> right before </worksheet>
             if "</worksheet>" in xml_str:
                 xml_str = xml_str.replace(
                     "</worksheet>",
                     ext_block + "</worksheet>",
                 )
-
-                # Ensure xmlns:xr is declared on <worksheet> tag
-                # (needed for xr:uid attributes inside x14 validations)
-                if 'xmlns:xr=' not in xml_str:
-                    xml_str = xml_str.replace(
-                        'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"',
-                        'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
-                        'xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision"',
-                    )
 
             data = xml_str.encode("utf-8")
 
@@ -381,7 +389,7 @@ def fill_sizer(template_path: str, loan_type: str, inputs: dict) -> io.BytesIO:
         raise ValueError(f"Unknown loan type: {loan_type}. Must be one of: {list(SIZER_MAPS.keys())}")
 
     # Step 1: Extract x14 dropdown blocks BEFORE openpyxl touches the file
-    x14_blocks = _extract_x14_blocks(template_path)
+    x14_blocks, ws_tags = _extract_x14_blocks(template_path)
 
     # Step 2: Load workbook and fill cells
     wb = openpyxl.load_workbook(template_path)
@@ -407,7 +415,7 @@ def fill_sizer(template_path: str, loan_type: str, inputs: dict) -> io.BytesIO:
     wb.save(output)
 
     # Step 4: Patch x14 dropdowns back in at ZIP level
-    output = _patch_x14_into_output(output, x14_blocks)
+    output = _patch_x14_into_output(output, x14_blocks, ws_tags)
     return output, filled_count
 
 
