@@ -613,6 +613,18 @@ def auto_fill_sizer(
                 except Exception:
                     pass  # Non-critical — skip if lookup fails
 
+    # --- AIV fallback: use Purchase Price as As-Is Value when AIV is missing ---
+    AIV_FALLBACK = {
+        "RTL":  ("prop1_as_is_value", "prop1_purchase_price"),
+        "DSCR": ("prop_appraisal_value", "prop_purchase_price"),
+        "MF":   ("as_is_value", "purchase_price"),
+        "GUC":  ("as_is_value", "purchase_price"),
+    }
+    if loan_type in AIV_FALLBACK:
+        aiv_field, pp_field = AIV_FALLBACK[loan_type]
+        if not extracted.get(aiv_field) and extracted.get(pp_field):
+            extracted[aiv_field] = extracted[pp_field]
+
     # Step 5: Fill the sizer template
     template_path = get_template_path(assets_dir, loan_type)
     sizer_bytes, filled_count, missing_fields = fill_sizer_with_highlights(
