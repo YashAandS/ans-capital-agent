@@ -1,8 +1,9 @@
 """
 app.py — A&S Capital AI Agent
-Main Streamlit UI with two core capabilities:
-  1. Automatic Sizer Filler (RTL / DSCR / MF / GUC)
-  2. Committee Presentation Builder
+Main Streamlit UI with three core capabilities:
+  1. The Sizernator — Automatic Sizer Filler (RTL / DSCR / MF / GUC)
+  2. Dealfit — Capital Partner Comparison (Colchis, Fidelis, Eastview)
+  3. Committee Presentation Builder
 
 Run with:  streamlit run app.py
 """
@@ -14,6 +15,7 @@ from dotenv import load_dotenv
 
 from modules.auto_sizer import auto_fill_sizer
 from modules.committee_deck import build_committee_deck
+from modules.dealfit import run_dealfit, read_sizer
 
 # ---------------------------------------------------------------------------
 # Environment & paths
@@ -179,8 +181,9 @@ with st.sidebar:
 # ---------------------------------------------------------------------------
 st.title("A&S Capital — Roberto Jr.")
 
-tab0, tab3 = st.tabs([
+tab0, tab_dealfit, tab3 = st.tabs([
     "⚡ The Sizernator",
+    "🎯 Dealfit",
     "🏛️ Committee Deck",
 ])
 
@@ -309,6 +312,181 @@ with tab0:
                     st.markdown(f"**{label}:** {v}")
 
 
+
+
+# ===========================================================================
+# TAB: DEALFIT — Capital Partner Comparison
+# ===========================================================================
+AS_SIZER_TEMPLATE = os.path.join(ASSETS_DIR, "AS_Capital_Sizer.xlsx")
+
+with tab_dealfit:
+    st.header("Dealfit")
+    st.caption("Upload your filled A&S Capital Sizer — Roberto Jr. will evaluate the deal against Colchis, Fidelis, and Eastview to find the best capital partner fit.")
+
+    if not api_ok:
+        st.warning("Set your ANTHROPIC_API_KEY in .env to use this feature.")
+    else:
+        # Download blank sizer template
+        dl_col, upload_col = st.columns([1, 3])
+        with dl_col:
+            if os.path.exists(AS_SIZER_TEMPLATE):
+                with open(AS_SIZER_TEMPLATE, "rb") as tf:
+                    st.download_button(
+                        "📄 Download Blank Sizer",
+                        data=tf.read(),
+                        file_name="AS_Capital_Sizer.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        help="Download the blank A&S Capital Sizer template to fill out",
+                    )
+
+        st.markdown(
+            """
+            <div style="background-color:#E0F0F8; border:2px dashed #A3D5E0; border-radius:10px;
+                        padding:15px; margin-bottom:15px; text-align:center;">
+                <p style="margin:0; color:#2C3E50; font-size:16px;">
+                    📊 <strong>Upload Filled Sizer</strong> — Drop your completed A&S Capital Sizer here
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        sizer_file = st.file_uploader(
+            "Upload Filled A&S Capital Sizer",
+            type=["xlsx"],
+            key="dealfit_upload",
+            help="Upload the A&S Capital Sizer Excel file you filled out",
+        )
+
+        if sizer_file:
+            st.info(f"📄 Uploaded: **{sizer_file.name}**")
+
+            if st.button("🎯 Analyze Deal", type="primary", key="dealfit_run"):
+                with st.spinner("Reading sizer and evaluating against all capital partners..."):
+                    file_bytes = sizer_file.getvalue()
+                    deal, results, recommendation = run_dealfit(
+                        api_key=ANTHROPIC_API_KEY,
+                        file_bytes=file_bytes,
+                    )
+
+                # Store results in session state
+                st.session_state["dealfit_result"] = {
+                    "deal": deal,
+                    "results": results,
+                    "recommendation": recommendation,
+                }
+
+        # Display persisted results
+        if "dealfit_result" in st.session_state:
+            dfr = st.session_state["dealfit_result"]
+            deal = dfr["deal"]
+            results = dfr["results"]
+            recommendation = dfr["recommendation"]
+
+            # --- Deal Summary ---
+            st.markdown("---")
+            st.subheader("Deal Summary")
+            sc1, sc2, sc3, sc4 = st.columns(4)
+            with sc1:
+                st.metric("Deal Type", deal.deal_type or "N/A")
+                st.metric("Transaction", deal.transaction_type or "N/A")
+            with sc2:
+                st.metric("Total Loan", f"${deal.total_loan:,.0f}" if deal.total_loan else "N/A")
+                st.metric("FICO", str(deal.primary_fico) if deal.primary_fico else "N/A")
+            with sc3:
+                st.metric("LTV", f"{deal.ltv:.1%}" if deal.ltv else "N/A")
+                st.metric("LTARV", f"{deal.ltarv:.1%}" if deal.ltarv else "N/A")
+            with sc4:
+                st.metric("LTC", f"{deal.ltc:.1%}" if deal.ltc else "N/A")
+                st.metric("Experience", f"{deal.completed_projects} projects")
+
+            # --- AI Recommendation ---
+            st.markdown("---")
+            st.subheader("🎯 Recommendation")
+            st.markdown(
+                f'<div style="background-color:#E0F0F8; border-left:4px solid #A3D5E0; '
+                f'padding:15px; border-radius:5px; color:#2C3E50;">{recommendation}</div>',
+                unsafe_allow_html=True,
+            )
+
+            # --- Partner Comparison Table ---
+            st.markdown("---")
+            st.subheader("Capital Partner Comparison")
+
+            for r in results:
+                if r.eligible:
+                    color = "#E8F8F0"   # green tint
+                    icon = "✅"
+                    border = "#2ECC71"
+                else:
+                    color = "#FDEDEC"   # red tint
+                    icon = "❌"
+                    border = "#E74C3C"
+
+                with st.container():
+                    st.markdown(
+                        f'<div style="background-color:{color}; border-left:4px solid {border}; '
+                        f'padding:12px; border-radius:5px; margin-bottom:10px;">'
+                        f'<h4 style="margin:0; color:#2C3E50;">{icon} {r.partner_name}</h4></div>',
+                        unsafe_allow_html=True,
+                    )
+
+                    if r.eligible:
+                        mc1, mc2, mc3, mc4 = st.columns(4)
+                        with mc1:
+                            st.markdown(f"**Max LTV:** {r.max_ltv:.1%}" if r.max_ltv else "**Max LTV:** N/A")
+                            st.markdown(f"**Max LTARV:** {r.max_ltarv:.1%}" if r.max_ltarv else "**Max LTARV:** N/A")
+                        with mc2:
+                            st.markdown(f"**Max LTC:** {r.max_ltc:.1%}" if r.max_ltc else "**Max LTC:** N/A")
+                            if r.max_loan_amount > 0:
+                                st.markdown(f"**Max Loan:** ${r.max_loan_amount:,.0f}")
+                        with mc3:
+                            if r.estimated_rate is not None:
+                                st.markdown(f"**Est. Rate:** {r.estimated_rate:.3%}")
+                            else:
+                                st.markdown(f"**Est. Rate:** {r.rate_notes}")
+                        with mc4:
+                            st.markdown(f"**Tier:** {r.experience_tier}")
+                            st.markdown(f"**FICO:** {r.fico_tier}")
+
+                        if r.warnings:
+                            with st.expander(f"⚠️ Warnings ({len(r.warnings)})", expanded=False):
+                                for w in r.warnings:
+                                    st.markdown(f"- {w}")
+                    else:
+                        st.markdown("**Ineligible:**")
+                        for reason in r.ineligible_reasons:
+                            st.markdown(f"- {reason}")
+
+                    st.markdown("")  # spacer
+
+            # --- Full Deal Details Expander ---
+            with st.expander("📋 Full Deal Details", expanded=False):
+                dc1, dc2 = st.columns(2)
+                with dc1:
+                    st.markdown("**Property**")
+                    st.markdown(f"Address: {deal.address}")
+                    st.markdown(f"Location: {deal.city}, {deal.state} {deal.zip_code}")
+                    st.markdown(f"Type: {deal.property_type} ({deal.num_units} units)")
+                    st.markdown(f"Sq Ft: {deal.sqft:,}" if deal.sqft else "Sq Ft: N/A")
+                    st.markdown("**Valuation**")
+                    st.markdown(f"Purchase Price: ${deal.purchase_price:,.0f}")
+                    st.markdown(f"As-Is Value: ${deal.as_is_value:,.0f}")
+                    st.markdown(f"ARV: ${deal.arv:,.0f}")
+                    st.markdown(f"Rehab Budget: ${deal.rehab_budget:,.0f}")
+                with dc2:
+                    st.markdown("**Loan Request**")
+                    st.markdown(f"Loan Amount: ${deal.loan_amount:,.0f}")
+                    st.markdown(f"Rehab Holdback: ${deal.rehab_holdback:,.0f}")
+                    st.markdown(f"Interest Reserve: ${deal.interest_reserve:,.0f}")
+                    st.markdown(f"**Total Loan: ${deal.total_loan:,.0f}**")
+                    st.markdown("**Borrower**")
+                    st.markdown(f"Entity: {deal.entity_name}")
+                    st.markdown(f"FICO: {deal.primary_fico}")
+                    st.markdown(f"Experience: {deal.completed_projects} projects")
+                    st.markdown(f"Liquidity: ${deal.verified_liquidity:,.0f}")
+                    if deal.zhvi > 0:
+                        st.markdown(f"ZHVI: ${deal.zhvi:,.0f} | Ratio: {deal.value_zhvi_ratio:.1%}")
 
 
 # ===========================================================================
