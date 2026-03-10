@@ -915,15 +915,338 @@ def evaluate_fidelis(deal: DealParams) -> PartnerResult:
 
 
 # ---------------------------------------------------------------------------
-# EASTVIEW — Placeholder (guidelines to be provided)
+# EASTVIEW CAPITAL — Rules Engine (RTL v4.2, GUC v1.1, MF v1.0)
 # ---------------------------------------------------------------------------
 
+def _eastview_rtl_classification(fico: int, experience: int) -> str:
+    """Eastview RTL borrower classification: A+, A, B, C based on score."""
+    # Credit Decision Score
+    if fico >= 700:
+        credit_score = 3
+    elif fico >= 680:
+        credit_score = 1
+    else:
+        credit_score = 0  # <680 or Foreign National
+
+    # Experience Score
+    if experience >= 10:
+        exp_score = 7
+    elif experience >= 3:
+        exp_score = 5
+    else:
+        exp_score = 1  # 0-2
+
+    total = credit_score + exp_score
+    if total >= 7:
+        return "A+"
+    elif total >= 5:
+        return "A"
+    elif total >= 2:
+        return "B"
+    else:
+        return "C"
+
+
+def _eastview_guc_classification(experience: int, fico: int) -> str:
+    """Eastview GUC borrower classification: A+, A, B."""
+    if experience >= 4:
+        return "A+"
+    elif experience >= 2:
+        return "A"
+    elif experience >= 1 and fico >= 700:
+        return "B"
+    else:
+        return None  # Ineligible
+
+
+def _eastview_mf_classification(fico: int, experience: int) -> str:
+    """Eastview MF borrower classification: A+, A (score-based)."""
+    # Credit Decision Score (MF uses different thresholds)
+    if fico >= 750:
+        credit_score = 3
+    elif fico >= 700:
+        credit_score = 2
+    else:
+        credit_score = 0
+
+    # Experience Score (MF uses different tiers)
+    if experience >= 20:
+        exp_score = 7
+    elif experience >= 10:
+        exp_score = 5
+    elif experience >= 3:
+        exp_score = 3
+    else:
+        exp_score = 1
+
+    total = credit_score + exp_score
+    if total >= 7:
+        return "A+"
+    elif total >= 5:
+        return "A"
+    else:
+        return None  # Only A+ and A eligible for MF
+
+
+# Eastview RTL leverage: {product: {purpose: {class: (LTV, LTC, LTARV)}}}
+EV_RTL_FF = {
+    "purchase":   {"A+": (0.900, 0.900, 0.750), "A": (0.850, 0.850, 0.700), "B": (0.825, 0.825, 0.650), "C": (0.750, 0.750, 0.600)},
+    "refi_rt":    {"A+": (0.750, None, 0.650),   "A": (0.725, None, 0.650),   "B": (0.700, None, 0.600),   "C": (0.600, None, 0.550)},
+    "refi_co":    {"A+": (0.700, None, 0.650),   "A": (0.675, None, 0.650),   "B": (0.650, None, 0.600),   "C": None},
+}
+
+EV_RTL_BRIDGE = {
+    "purchase":   {"A+": (0.825, 0.825, None), "A": (0.800, 0.800, None), "B": (0.800, 0.800, None), "C": (0.750, 0.750, None)},
+    "refi_rt":    {"A+": (0.775, None, None),   "A": (0.750, None, None),   "B": (0.750, None, None),   "C": (0.650, None, None)},
+    "refi_co":    {"A+": (0.725, None, None),   "A": (0.700, None, None),   "B": (0.700, None, None),   "C": (0.600, None, None)},
+}
+
+EV_RTL_BRIDGE_PLUS = {
+    "purchase":   {"A+": (0.775, 0.775, None), "A": (0.750, 0.750, None), "B": (0.750, 0.750, None), "C": (0.700, 0.700, None)},
+    "refi_rt":    {"A+": (0.725, None, None),   "A": (0.700, None, None),   "B": (0.700, None, None),   "C": (0.600, None, None)},
+    "refi_co":    {"A+": (0.675, None, None),   "A": (0.650, None, None),   "B": (0.650, None, None),   "C": (0.550, None, None)},
+}
+
+# Eastview GUC leverage: {purpose: {class: (As-Is LTV, LTC, TLTC, LTARV)}}
+EV_GUC = {
+    "purchase":   {"A+": (0.750, 0.750, 0.900, 0.700), "A": (0.700, 0.700, 0.850, 0.700), "B": (0.650, 0.650, 0.800, 0.650)},
+    "refi_rt":    {"A+": (0.700, None, None, 0.700),     "A": (0.650, None, None, 0.700),     "B": (0.600, None, None, 0.650)},
+    "refi_co":    {"A+": (0.650, None, None, 0.650),     "A": (0.600, None, None, 0.650),     "B": (0.550, None, None, 0.600)},
+}
+
+# Eastview MF leverage: {product: {purpose: {class: (LTV, LTC, LTARV)}}}
+EV_MF_CAPEX = {
+    "purchase":   {"A+": (0.800, 0.800, 0.700), "A": (0.800, 0.800, 0.650)},
+    "refi_rt":    {"A+": (0.750, None, 0.650),   "A": (0.750, None, 0.600)},
+    "refi_co":    {"A+": (0.650, None, 0.550),   "A": (0.650, None, 0.500)},
+}
+
+EV_MF_BRIDGE = {
+    "purchase":   {"A+": (0.750, 0.750, None), "A": (0.725, 0.725, None)},
+    "refi_rt":    {"A+": (0.700, None, None),   "A": (0.675, None, None)},
+    "refi_co":    {"A+": (0.550, None, None),   "A": (0.500, None, None)},
+}
+
+EV_NOT_PERMITTED = {"ND", "SD", "HI", "AK"}
+
+
 def evaluate_eastview(deal: DealParams) -> PartnerResult:
-    """Placeholder — will be populated when Eastview guidelines are provided."""
+    """Evaluate a deal against Eastview Capital guidelines (RTL v4.2, GUC v1.1, MF v1.0)."""
     result = PartnerResult(partner_name="Eastview Capital")
-    result.eligible = True
-    result.rate_notes = "Eastview guidelines pending — use The Sizernator for full Eastview analysis"
-    result.warnings.append("Eastview evaluation is a placeholder — full guidelines not yet integrated")
+
+    fico = deal.primary_fico
+    exp = deal.completed_projects
+    dt = deal.deal_type.lower()
+    is_guc = "ground up" in dt or "construction" in dt or "guc" in dt
+    is_bridge = "bridge" in dt
+    is_mf = deal.is_multifamily
+
+    # --- Hard eligibility checks ---
+
+    # Min FICO
+    if is_mf:
+        min_fico = 680
+    else:
+        min_fico = 660
+    if fico < min_fico and fico > 0:
+        result.eligible = False
+        result.ineligible_reasons.append(f"FICO {fico} below Eastview minimum of {min_fico}")
+
+    # Not Permitted States
+    if deal.state in EV_NOT_PERMITTED:
+        result.eligible = False
+        result.ineligible_reasons.append(f"{deal.state} is not permitted by Eastview")
+
+    # Loan amount limits
+    if is_mf:
+        min_loan = 500000
+        max_loan = 3500000
+        if deal.num_units >= 9:
+            min_loan = 1000000
+    elif is_guc:
+        min_loan = 150000
+        max_loan = 1500000
+    else:
+        min_loan = 100000
+        max_loan = 3000000
+
+    if deal.total_loan < min_loan:
+        result.eligible = False
+        result.ineligible_reasons.append(f"Total loan ${deal.total_loan:,.0f} below Eastview min ${min_loan:,.0f}")
+    if deal.total_loan > max_loan:
+        result.warnings.append(f"Total loan ${deal.total_loan:,.0f} exceeds standard max ${max_loan:,.0f} (exception may apply)")
+
+    # MF: max $400K per unit
+    if is_mf and deal.num_units > 0:
+        loan_per_unit = deal.total_loan / deal.num_units
+        if loan_per_unit > 400000:
+            result.eligible = False
+            result.ineligible_reasons.append(f"Loan/unit ${loan_per_unit:,.0f} exceeds Eastview max $400,000/unit")
+        # Min value per unit
+        if deal.arv > 0:
+            val_per_unit = deal.arv / deal.num_units
+            if val_per_unit < 100000:
+                result.warnings.append(f"Value/unit ${val_per_unit:,.0f} below standard min $100K (exception $50-99K)")
+
+    # Property type (RTL/GUC: 1-4 units only; MF: 5+ units)
+    if not is_mf and deal.num_units > 4:
+        result.eligible = False
+        result.ineligible_reasons.append(f"{deal.num_units} units — use Eastview MF product for 5+ units")
+
+    if not result.eligible:
+        return result
+
+    # --- Classification and leverage lookup ---
+    purpose = "purchase" if deal.is_purchase else ("refi_co" if deal.is_cashout_refi else "refi_rt")
+
+    if is_mf:
+        bclass = _eastview_mf_classification(fico, exp)
+        if bclass is None:
+            result.eligible = False
+            result.ineligible_reasons.append(
+                f"Eastview MF requires A+ or A classification (FICO {fico}, {exp} projects = score too low)"
+            )
+            return result
+
+        result.experience_tier = bclass
+        result.fico_tier = f"FICO {fico}"
+
+        # CAPEX (has rehab) vs Bridge (no rehab)
+        if deal.rehab_budget > 0:
+            grid = EV_MF_CAPEX
+        else:
+            grid = EV_MF_BRIDGE
+
+        purpose_data = grid.get(purpose, {})
+        leverage = purpose_data.get(bclass)
+        if leverage is None:
+            result.eligible = False
+            result.ineligible_reasons.append(f"Eastview MF: {bclass} not eligible for {purpose}")
+            return result
+
+        max_ltv, max_ltc, max_ltarv = leverage
+        result.max_ltv = max_ltv or 0
+        result.max_ltc = max_ltc or 0
+        result.max_ltarv = max_ltarv or 0
+        result.max_loan_amount = max_loan
+
+        # MF leverage reductions
+        if deal.rehab_budget > 0 and deal.purchase_price > 0:
+            if deal.rehab_budget > deal.purchase_price:  # Heavy rehab
+                result.max_ltv = max(0, result.max_ltv - 0.05)
+                if result.max_ltc:
+                    result.max_ltc = max(0, result.max_ltc - 0.05)
+                if result.max_ltarv:
+                    result.max_ltarv = max(0, result.max_ltarv - 0.05)
+                result.warnings.append("Heavy rehab: -5% leverage reduction")
+
+    elif is_guc:
+        bclass = _eastview_guc_classification(exp, fico)
+        if bclass is None:
+            result.eligible = False
+            result.ineligible_reasons.append(
+                f"Eastview GUC requires min 1 GUC project (you have {exp}) and FICO >= 700 for Class B"
+            )
+            return result
+
+        result.experience_tier = bclass
+        result.fico_tier = f"FICO {fico}"
+
+        purpose_data = EV_GUC.get(purpose, {})
+        leverage = purpose_data.get(bclass)
+        if leverage is None:
+            result.eligible = False
+            result.ineligible_reasons.append(f"Eastview GUC: {bclass} not eligible for {purpose}")
+            return result
+
+        max_ltv, max_ltc, max_tltc, max_ltarv = leverage
+        result.max_ltv = max_ltv or 0
+        result.max_ltc = max_tltc or max_ltc or 0  # Use TLTC if available
+        result.max_ltarv = max_ltarv or 0
+        result.max_loan_amount = max_loan
+
+        # FICO 660-679 cap at 65%
+        if 660 <= fico <= 679:
+            result.max_ltv = min(result.max_ltv, 0.65)
+            if result.max_ltc:
+                result.max_ltc = min(result.max_ltc, 0.65)
+            result.warnings.append("FICO 660-679: LTV/LTC capped at 65%")
+
+        # ZHVI / HPA reductions
+        if deal.value_zhvi_ratio > 3.0:
+            result.max_ltv = max(0, result.max_ltv - 0.10)
+            result.warnings.append("ZHVI >300%: -10% leverage reduction")
+        elif deal.value_zhvi_ratio > 2.0:
+            result.max_ltv = max(0, result.max_ltv - 0.05)
+            result.warnings.append("ZHVI 200-300%: -5% leverage reduction")
+
+    else:
+        # RTL (Fix & Flip / Bridge / Bridge Plus)
+        bclass = _eastview_rtl_classification(fico, exp)
+        result.experience_tier = bclass
+        result.fico_tier = f"FICO {fico}"
+
+        # Determine product
+        if is_bridge:
+            grid = EV_RTL_BRIDGE
+            product_name = "Bridge"
+        elif deal.rehab_budget > 0:
+            grid = EV_RTL_FF
+            product_name = "Fix & Flip"
+        else:
+            grid = EV_RTL_BRIDGE
+            product_name = "Bridge"
+
+        purpose_data = grid.get(purpose, {})
+        leverage = purpose_data.get(bclass)
+        if leverage is None:
+            result.eligible = False
+            result.ineligible_reasons.append(f"Eastview RTL: Class {bclass} not eligible for {product_name} {purpose}")
+            return result
+
+        max_ltv, max_ltc, max_ltarv = leverage
+        result.max_ltv = max_ltv or 0
+        result.max_ltc = max_ltc or 0
+        result.max_ltarv = max_ltarv or 0
+        result.max_loan_amount = max_loan
+
+        # Leverage reductions
+        # Heavy rehab: budget > $50K AND > 100% of purchase price
+        if deal.rehab_budget > 50000 and deal.purchase_price > 0:
+            if deal.rehab_budget > deal.purchase_price:
+                if bclass in ("A+", "A", "B"):
+                    reduction = 0.05
+                else:
+                    reduction = 0.10
+                result.max_ltv = max(0, result.max_ltv - reduction)
+                if result.max_ltc:
+                    result.max_ltc = max(0, result.max_ltc - reduction)
+                if result.max_ltarv:
+                    result.max_ltarv = max(0, result.max_ltarv - reduction)
+                result.warnings.append(f"Heavy rehab: -{reduction:.0%} leverage reduction (Class {bclass})")
+
+        # ZHVI multiplier reduction
+        if deal.value_zhvi_ratio > 2.0:
+            result.max_ltv = max(0, result.max_ltv - 0.05)
+            result.warnings.append("ZHVI 200-300%: -5% leverage reduction")
+
+        # Large loan reduction
+        if deal.total_loan >= 2000000:
+            result.max_ltv = max(0, result.max_ltv - 0.05)
+            result.warnings.append("Loan $2M-$3M: -5% leverage reduction")
+
+    # --- Check if deal fits within limits ---
+    if result.max_ltv > 0 and deal.ltv > result.max_ltv:
+        result.warnings.append(f"Deal LTV {deal.ltv:.1%} exceeds max {result.max_ltv:.1%}")
+    if result.max_ltarv > 0 and deal.ltarv > result.max_ltarv:
+        result.warnings.append(f"Deal LTARV {deal.ltarv:.1%} exceeds max {result.max_ltarv:.1%}")
+    if result.max_ltc > 0 and deal.ltc > result.max_ltc:
+        result.warnings.append(f"Deal LTC {deal.ltc:.1%} exceeds max {result.max_ltc:.1%}")
+
+    # Rate — Eastview doesn't have a public rate sheet in guidelines
+    result.estimated_rate = None
+    result.rate_notes = "Use The Sizernator for full Eastview rate analysis"
+
     return result
 
 
