@@ -182,24 +182,22 @@ def _safe_str(val, default="") -> str:
 def read_sizer(file_bytes: bytes) -> DealParams:
     """Read the A&S Capital Sizer Excel template and return DealParams.
 
-    Cell map (v2 — rebuilt Eastview-quality layout):
+    Cell map (v2 — auto-calculating Eastview-quality layout):
         Sizer sheet:
           C5  = Deal Type          C6  = Transaction Type     C7  = Loan Term
           C8  = Deal Product
-          C11 = Address            C12 = City                 E12 = State
+          C11 = Address (merged C11:D11)  C12 = City          E12 = State
           C13 = ZIP Code           C14 = Property Type        C15 = # Units
-          C16 = Square Footage     E16 = Lot Size             C17 = Year Built
-          C18 = Condition
-          C21 = Purchase Price     C22 = As-Is Value          C23 = ARV
-          C24 = Rehab Budget       C25 = Total Project Cost (formula)
-          C29 = Initial Loan       C30 = Rehab Holdback       C31 = Interest Reserve
-          C32 = Total Loan (formula)
-          C37 = Borrowing Entity   C38 = # Guarantors
-          C41 = Guarantor 1 Name   C42 = Guarantor 1 FICO
-          C46 = Guarantor 2 Name   C47 = Guarantor 2 FICO
-          C51 = # Completed Projects  C52 = Similar Experience
-          C53 = Verified Liquidity    C54 = Monthly PITIA
-          F21 = ZHVI (formula)        F22 = Value/ZHVI Ratio (formula)
+          C16 = Square Footage     E16 = Lot Size             C17 = Year Built (formula)
+          C20 = Purchase Price     C21 = Purchase Date        C22 = As-Is Value
+          C23 = ARV                C24 = Rehab Budget         C25 = Total Project Cost (formula)
+          C28 = Initial Loan       C29 = Rehab Holdback       C30 = Interest Reserve
+          C31 = Total Loan (formula)
+          C34 = Borrowing Entity (merged C34:D34)   C35 = # Guarantors
+          C38 = Guarantor 1 Name (merged C38:D38)   C39 = Guarantor 1 FICO
+          C42 = Guarantor 2 Name (merged C42:D42)   C43 = Guarantor 2 FICO
+          C46 = # Completed Projects  C47 = Similar Experience
+          F20 = ZHVI (formula)        F21 = Value/ZHVI Ratio (formula)
     """
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
     ws = wb["Sizer"]
@@ -222,36 +220,34 @@ def read_sizer(file_bytes: bytes) -> DealParams:
     deal.sqft = _safe_int(ws["C16"].value)
     deal.year_built = _safe_int(ws["C17"].value)
     deal.lot_size = _safe_int(ws["E16"].value)
-    deal.condition = _safe_str(ws["C18"].value)
+    # condition field removed from sizer — no longer collected
 
     # Valuation
-    deal.purchase_price = _safe_float(ws["C21"].value)
+    deal.purchase_price = _safe_float(ws["C20"].value)
     deal.as_is_value = _safe_float(ws["C22"].value)
     deal.arv = _safe_float(ws["C23"].value)
     deal.rehab_budget = _safe_float(ws["C24"].value)
 
     # Loan
-    deal.loan_amount = _safe_float(ws["C29"].value)
-    deal.rehab_holdback = _safe_float(ws["C30"].value)
-    deal.interest_reserve = _safe_float(ws["C31"].value)
+    deal.loan_amount = _safe_float(ws["C28"].value)
+    deal.rehab_holdback = _safe_float(ws["C29"].value)
+    deal.interest_reserve = _safe_float(ws["C30"].value)
 
     # Borrower
-    deal.entity_name = _safe_str(ws["C37"].value)
-    deal.num_guarantors = _safe_int(ws["C38"].value, 1)
-    deal.guarantor_1_name = _safe_str(ws["C41"].value)
-    deal.guarantor_1_fico = _safe_int(ws["C42"].value)
-    deal.guarantor_2_name = _safe_str(ws["C46"].value)
-    deal.guarantor_2_fico = _safe_int(ws["C47"].value)
+    deal.entity_name = _safe_str(ws["C34"].value)
+    deal.num_guarantors = _safe_int(ws["C35"].value, 1)
+    deal.guarantor_1_name = _safe_str(ws["C38"].value)
+    deal.guarantor_1_fico = _safe_int(ws["C39"].value)
+    deal.guarantor_2_name = _safe_str(ws["C42"].value)
+    deal.guarantor_2_fico = _safe_int(ws["C43"].value)
 
-    # Experience & Liquidity
-    deal.completed_projects = _safe_int(ws["C51"].value)
-    deal.similar_experience = _safe_str(ws["C52"].value)
-    deal.verified_liquidity = _safe_float(ws["C53"].value)
-    deal.monthly_pitia = _safe_float(ws["C54"].value)
+    # Experience (liquidity & PITIA removed from sizer)
+    deal.completed_projects = _safe_int(ws["C46"].value)
+    deal.similar_experience = _safe_str(ws["C47"].value)
 
     # ZHVI (computed cells — data_only=True gives calculated values)
-    deal.zhvi = _safe_float(ws["F21"].value)
-    deal.value_zhvi_ratio = _safe_float(ws["F22"].value)
+    deal.zhvi = _safe_float(ws["F20"].value)
+    deal.value_zhvi_ratio = _safe_float(ws["F21"].value)
 
     # AIV fallback
     if deal.as_is_value == 0 and deal.purchase_price > 0:
