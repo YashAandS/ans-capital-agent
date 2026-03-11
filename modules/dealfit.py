@@ -33,6 +33,7 @@ class DealParams:
     deal_type: str = ""           # Fix & Flip, Bridge, Fix & Hold, Ground Up Construction
     transaction_type: str = ""    # Purchase, Refinance (Rate & Term), Refinance (Cash Out)
     loan_term: str = ""           # 6 Months, 12 Months, 13-18 Months, 19-24 Months
+    deal_product: str = ""        # Light Rehab, Heavy Rehab, Bridge, Construction
 
     # Property
     address: str = ""
@@ -179,57 +180,78 @@ def _safe_str(val, default="") -> str:
 
 
 def read_sizer(file_bytes: bytes) -> DealParams:
-    """Read the A&S Capital Sizer Excel template and return DealParams."""
+    """Read the A&S Capital Sizer Excel template and return DealParams.
+
+    Cell map (v2 — rebuilt Eastview-quality layout):
+        Sizer sheet:
+          C5  = Deal Type          C6  = Transaction Type     C7  = Loan Term
+          C8  = Deal Product
+          C11 = Address            C12 = City                 E12 = State
+          C13 = ZIP Code           C14 = Property Type        C15 = # Units
+          C16 = Square Footage     E16 = Lot Size             C17 = Year Built
+          C18 = Condition
+          C21 = Purchase Price     C22 = As-Is Value          C23 = ARV
+          C24 = Rehab Budget       C25 = Total Project Cost (formula)
+          C29 = Initial Loan       C30 = Rehab Holdback       C31 = Interest Reserve
+          C32 = Total Loan (formula)
+          C37 = Borrowing Entity   C38 = # Guarantors
+          C41 = Guarantor 1 Name   C42 = Guarantor 1 FICO
+          C46 = Guarantor 2 Name   C47 = Guarantor 2 FICO
+          C51 = # Completed Projects  C52 = Similar Experience
+          C53 = Verified Liquidity    C54 = Monthly PITIA
+          F21 = ZHVI (formula)        F22 = Value/ZHVI Ratio (formula)
+    """
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
     ws = wb["Sizer"]
 
     deal = DealParams()
 
     # Deal type
-    deal.deal_type = _safe_str(ws["B5"].value)
-    deal.transaction_type = _safe_str(ws["E5"].value)
-    deal.loan_term = _safe_str(ws["B6"].value)
+    deal.deal_type = _safe_str(ws["C5"].value)
+    deal.transaction_type = _safe_str(ws["C6"].value)
+    deal.loan_term = _safe_str(ws["C7"].value)
+    deal.deal_product = _safe_str(ws["C8"].value)
 
     # Property
-    deal.address = _safe_str(ws["B9"].value)
-    deal.city = _safe_str(ws["B10"].value)
-    deal.state = _safe_str(ws["E10"].value)
-    deal.zip_code = _safe_str(ws["B11"].value)
-    deal.property_type = _safe_str(ws["B12"].value)
-    deal.num_units = _safe_int(ws["B13"].value, 1)
-    deal.sqft = _safe_int(ws["B14"].value)
-    deal.year_built = _safe_int(ws["B15"].value)
-    deal.lot_size = _safe_int(ws["B16"].value)
-    deal.condition = _safe_str(ws["B17"].value)
+    deal.address = _safe_str(ws["C11"].value)
+    deal.city = _safe_str(ws["C12"].value)
+    deal.state = _safe_str(ws["E12"].value)
+    deal.zip_code = _safe_str(ws["C13"].value)
+    deal.property_type = _safe_str(ws["C14"].value)
+    deal.num_units = _safe_int(ws["C15"].value, 1)
+    deal.sqft = _safe_int(ws["C16"].value)
+    deal.year_built = _safe_int(ws["C17"].value)
+    deal.lot_size = _safe_int(ws["E16"].value)
+    deal.condition = _safe_str(ws["C18"].value)
 
     # Valuation
-    deal.purchase_price = _safe_float(ws["B20"].value)
-    deal.as_is_value = _safe_float(ws["B21"].value)
-    deal.arv = _safe_float(ws["B22"].value)
-    deal.rehab_budget = _safe_float(ws["B23"].value)
+    deal.purchase_price = _safe_float(ws["C21"].value)
+    deal.as_is_value = _safe_float(ws["C22"].value)
+    deal.arv = _safe_float(ws["C23"].value)
+    deal.rehab_budget = _safe_float(ws["C24"].value)
 
     # Loan
-    deal.loan_amount = _safe_float(ws["B26"].value)
-    deal.rehab_holdback = _safe_float(ws["B27"].value)
-    deal.interest_reserve = _safe_float(ws["B28"].value)
+    deal.loan_amount = _safe_float(ws["C29"].value)
+    deal.rehab_holdback = _safe_float(ws["C30"].value)
+    deal.interest_reserve = _safe_float(ws["C31"].value)
 
     # Borrower
-    deal.entity_name = _safe_str(ws["B31"].value)
-    deal.num_guarantors = _safe_int(ws["B32"].value, 1)
-    deal.guarantor_1_name = _safe_str(ws["B34"].value)
-    deal.guarantor_1_fico = _safe_int(ws["B35"].value)
-    deal.guarantor_2_name = _safe_str(ws["B39"].value)
-    deal.guarantor_2_fico = _safe_int(ws["B40"].value)
+    deal.entity_name = _safe_str(ws["C37"].value)
+    deal.num_guarantors = _safe_int(ws["C38"].value, 1)
+    deal.guarantor_1_name = _safe_str(ws["C41"].value)
+    deal.guarantor_1_fico = _safe_int(ws["C42"].value)
+    deal.guarantor_2_name = _safe_str(ws["C46"].value)
+    deal.guarantor_2_fico = _safe_int(ws["C47"].value)
 
     # Experience & Liquidity
-    deal.completed_projects = _safe_int(ws["B45"].value)
-    deal.similar_experience = _safe_str(ws["B46"].value)
-    deal.verified_liquidity = _safe_float(ws["B47"].value)
-    deal.monthly_pitia = _safe_float(ws["B48"].value)
+    deal.completed_projects = _safe_int(ws["C51"].value)
+    deal.similar_experience = _safe_str(ws["C52"].value)
+    deal.verified_liquidity = _safe_float(ws["C53"].value)
+    deal.monthly_pitia = _safe_float(ws["C54"].value)
 
     # ZHVI (computed cells — data_only=True gives calculated values)
-    deal.zhvi = _safe_float(ws["E26"].value)
-    deal.value_zhvi_ratio = _safe_float(ws["E27"].value)
+    deal.zhvi = _safe_float(ws["F21"].value)
+    deal.value_zhvi_ratio = _safe_float(ws["F22"].value)
 
     # AIV fallback
     if deal.as_is_value == 0 and deal.purchase_price > 0:
