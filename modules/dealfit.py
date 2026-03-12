@@ -182,7 +182,7 @@ def _safe_str(val, default="") -> str:
 def read_sizer(file_bytes: bytes) -> DealParams:
     """Read the A&S Capital Sizer Excel template and return DealParams.
 
-    Cell map (v2 — auto-calculating Eastview-quality layout):
+    Cell map (v3 — single-tab Eastview-style, inputs LEFT + sizing RIGHT):
         Sizer sheet:
           C5  = Deal Type          C6  = Transaction Type     C7  = Loan Term
           C8  = Deal Product
@@ -197,7 +197,7 @@ def read_sizer(file_bytes: bytes) -> DealParams:
           C38 = Guarantor 1 Name (merged C38:D38)   C39 = Guarantor 1 FICO
           C42 = Guarantor 2 Name (merged C42:D42)   C43 = Guarantor 2 FICO
           C46 = # Completed Projects  C47 = Similar Experience
-          F20 = ZHVI (formula)        F21 = Value/ZHVI Ratio (formula)
+          E20 = ZHVI (formula)        E21 = Value/ZHVI Ratio (formula)
     """
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
     ws = wb["Sizer"]
@@ -246,8 +246,8 @@ def read_sizer(file_bytes: bytes) -> DealParams:
     deal.similar_experience = _safe_str(ws["C47"].value)
 
     # ZHVI (computed cells — data_only=True gives calculated values)
-    deal.zhvi = _safe_float(ws["F20"].value)
-    deal.value_zhvi_ratio = _safe_float(ws["F21"].value)
+    deal.zhvi = _safe_float(ws["E20"].value)
+    deal.value_zhvi_ratio = _safe_float(ws["E21"].value)
 
     # AIV fallback
     if deal.as_is_value == 0 and deal.purchase_price > 0:

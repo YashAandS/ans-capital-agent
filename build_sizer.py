@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
-A&S Capital Sizer -- Excel Template Builder  (v2 - Auto-Calculating)
+A&S Capital Sizer -- Excel Template Builder  (v3 - Single-Tab Eastview Style)
 Generates a professional loan sizing workbook with:
-  - Auto-calculating leverage maximums via VLOOKUP against hidden lookup tables
-  - Auto-calculated pricing via embedded Colchis pricing grid
+  - Single "Sizer" tab: inputs on LEFT, auto-sizing on RIGHT (Eastview layout)
+  - Correct Colchis leverage formulas (Construction sized by LTC/LTARV, not LTV)
+  - Full Colchis pricing grid with ALL adjustments (experience, term, state, ZHVI, etc.)
+  - Hidden lookup tables for VLOOKUP-driven auto-calculation
+  - Guideline pass/fail checks
   - ZHVI market data integration
-  - Full guideline pass/fail checks
 
 Output: assets/AS_Capital_Sizer.xlsx
 """
@@ -32,12 +34,13 @@ EXISTING_PATH = OUTPUT_PATH
 # COLOUR PALETTE  (NO YELLOW ANYWHERE)
 # ---------------------------------------------------------------------------
 DEEP_BLUE   = "0B5394"
+TEAL        = "087496"
 POWDER_BLUE = "A3D5E0"
 LIGHT_BLUE  = "E0F0F8"
 DARK_TEXT    = "2C3E50"
 WHITE        = "FFFFFF"
-PASS_GREEN   = "E8F8F0"
-FAIL_RED     = "FDEDEC"
+PASS_GREEN   = "27AE60"
+FAIL_RED     = "E74C3C"
 LIGHT_GRAY   = "F2F2F2"
 MED_GRAY     = "999999"
 DARK_GRAY    = "444444"
@@ -52,31 +55,30 @@ THIN_BORDER = Border(
     top=Side(style="thin", color=BLACK),
     bottom=Side(style="thin", color=BLACK),
 )
+NO_BORDER = Border()
 
 FONT_TITLE         = Font(name="Calibri", size=16, bold=True, color=WHITE)
-FONT_SECTION        = Font(name="Calibri", size=11, bold=True, color=DARK_TEXT)
+FONT_SECTION        = Font(name="Calibri", size=11, bold=True, color=WHITE)
 FONT_SUBSECTION     = Font(name="Calibri", size=10, bold=True, color=DARK_TEXT)
 FONT_LABEL          = Font(name="Calibri", size=10, color=DARK_TEXT)
 FONT_INPUT          = Font(name="Calibri", size=10, color=BLACK)
 FONT_COMPUTED       = Font(name="Calibri", size=10, color=DARK_TEXT)
 FONT_COMPUTED_BOLD  = Font(name="Calibri", size=10, bold=True, color=DARK_TEXT)
 FONT_BIG_RESULT     = Font(name="Calibri", size=12, bold=True, color=WHITE)
-FONT_COLHEAD        = Font(name="Calibri", size=11, bold=True, color=WHITE)
 FONT_NOTE           = Font(name="Calibri", size=9, italic=True, color=MED_GRAY)
-FONT_PASS           = Font(name="Calibri", size=10, bold=True, color="27AE60")
-FONT_FAIL           = Font(name="Calibri", size=10, bold=True, color="E74C3C")
+FONT_PASS           = Font(name="Calibri", size=10, bold=True, color=PASS_GREEN)
+FONT_FAIL           = Font(name="Calibri", size=10, bold=True, color=FAIL_RED)
 FONT_REF_HEADER     = Font(name="Calibri", size=13, bold=True, color=WHITE)
 FONT_REF_SECTION    = Font(name="Calibri", size=11, bold=True, color=DEEP_BLUE)
 FONT_REF            = Font(name="Calibri", size=9, color=DARK_TEXT)
 FONT_REF_BOLD       = Font(name="Calibri", size=9, bold=True, color=DARK_TEXT)
 
 FILL_DEEP_BLUE  = PatternFill(start_color=DEEP_BLUE, end_color=DEEP_BLUE, fill_type="solid")
+FILL_TEAL       = PatternFill(start_color=TEAL, end_color=TEAL, fill_type="solid")
 FILL_POWDER     = PatternFill(start_color=POWDER_BLUE, end_color=POWDER_BLUE, fill_type="solid")
 FILL_LIGHT_BLUE = PatternFill(start_color=LIGHT_BLUE, end_color=LIGHT_BLUE, fill_type="solid")
 FILL_WHITE      = PatternFill(start_color=WHITE, end_color=WHITE, fill_type="solid")
 FILL_LIGHT_GRAY = PatternFill(start_color=LIGHT_GRAY, end_color=LIGHT_GRAY, fill_type="solid")
-FILL_PASS       = PatternFill(start_color=PASS_GREEN, end_color=PASS_GREEN, fill_type="solid")
-FILL_FAIL       = PatternFill(start_color=FAIL_RED, end_color=FAIL_RED, fill_type="solid")
 
 ALIGN_CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
 ALIGN_LEFT   = Alignment(horizontal="left", vertical="center", wrap_text=True)
@@ -104,6 +106,7 @@ DROPDOWNS = {
     "state":         STATES,
     "experience":    "Yes,No,Limited",
     "guarantors":    "1,2,3,4",
+    "yes_no":        "Yes,No",
 }
 
 
@@ -137,24 +140,24 @@ def _apply_label_style(cell):
 
 
 def _section_header(ws, row, col_start, col_end, text):
-    """Powder-blue section header spanning col_start:col_end."""
+    """Teal section header spanning col_start:col_end."""
     ws.merge_cells(
         start_row=row, start_column=col_start,
         end_row=row, end_column=col_end
     )
     cell = ws.cell(row=row, column=col_start, value=text)
     cell.font = FONT_SECTION
-    cell.fill = FILL_POWDER
+    cell.fill = FILL_TEAL
     cell.alignment = ALIGN_LEFT
     cell.border = THIN_BORDER
     for c in range(col_start + 1, col_end + 1):
         mc = ws.cell(row=row, column=c)
-        mc.fill = FILL_POWDER
+        mc.fill = FILL_TEAL
         mc.border = THIN_BORDER
 
 
 def _sub_header(ws, row, col_start, col_end, text):
-    """Lighter sub-header for guarantor blocks etc."""
+    """Lighter sub-header."""
     ws.merge_cells(
         start_row=row, start_column=col_start,
         end_row=row, end_column=col_end
@@ -233,16 +236,52 @@ def _merged_input(ws, row, col_start, col_end, fmt=None):
 
 
 # ============================================================================
-# SHEET 1: SIZER (INPUT SHEET)
+# SINGLE SIZER SHEET: Inputs LEFT (B-E) + Auto-Sizing RIGHT (G-J)
+# ============================================================================
+#
+# LAYOUT:
+#   Col A = spacer (width 3)
+#   Col B = labels  (width 24)
+#   Col C = input values (width 20)
+#   Col D = extra labels / input overflow (width 20)
+#   Col E = extra inputs (width 20)
+#   Col F = spacer (width 3)
+#   Col G = sizing labels (width 28)
+#   Col H = sizing values / col 1 (width 20)
+#   Col I = sizing values / col 2 (width 20)
+#   Col J = sizing notes (width 20)
+#   Col K = spacer (width 3)
+#
+# Cell references for dealfit.py:
+#   C5  = Deal Type       C6  = Transaction Type    C7  = Loan Term
+#   C8  = Deal Product
+#   C11 = Address          C12 = City                E12 = State
+#   C13 = ZIP Code         C14 = Property Type       C15 = # Units
+#   C16 = Square Footage   E16 = Lot Size            C17 = Year Built (formula)
+#   C20 = Purchase Price   C21 = Purchase Date       C22 = As-Is Value
+#   C23 = ARV              C24 = Rehab Budget        C25 = Total Project Cost (formula)
+#   C28 = Initial Loan Amt C29 = Rehab Holdback      C30 = Interest Reserve
+#   C31 = Total Loan (formula)
+#   C34 = Borrowing Entity C35 = # Guarantors
+#   C38 = G1 Name          C39 = G1 FICO
+#   C42 = G2 Name          C43 = G2 FICO
+#   C46 = # Completed Projects   C47 = Similar Experience
+#   F20 = ZHVI             F21 = Value/ZHVI Ratio
+#
+# RIGHT SIDE auto-sizing starts at G5:
+#   H5  = Experience Tier (formula)
+#   H6  = FICO Bucket (formula)
+#   H7  = Product Category (formula)
+#   H8  = Leverage Lookup Key
+#   ...etc
 # ============================================================================
 
 def build_sizer_sheet(wb):
     ws = wb.active
     ws.title = "Sizer"
-    ws.sheet_properties.tabColor = None  # No tab color
 
-    # Column widths  A=3, B=22, C=20, D=20, E=22, F=20, G=20, H=3
-    widths = {1: 3, 2: 22, 3: 20, 4: 20, 5: 22, 6: 20, 7: 20, 8: 3}
+    # Column widths
+    widths = {1: 3, 2: 24, 3: 20, 4: 20, 5: 20, 6: 3, 7: 28, 8: 20, 9: 20, 10: 20, 11: 3}
     for col, w in widths.items():
         ws.column_dimensions[get_column_letter(col)].width = w
 
@@ -250,12 +289,12 @@ def build_sizer_sheet(wb):
     ws.row_dimensions[2].height = 36
 
     # ---- Title ----
-    _title_row(ws, 2, 1, 8, "A&S CAPITAL SIZER")
+    _title_row(ws, 2, 1, 11, "A&S CAPITAL SIZER")
 
     # ==================================================================
-    # DEAL INFORMATION (rows 4-8)
+    # LEFT SIDE: DEAL INFORMATION (rows 4-8)
     # ==================================================================
-    _section_header(ws, 4, 2, 3, "DEAL INFORMATION")
+    _section_header(ws, 4, 2, 5, "DEAL INFORMATION")
 
     _label(ws, 5, 2, "Deal Type")
     _input_cell(ws, 5, 3)
@@ -274,10 +313,35 @@ def build_sizer_sheet(wb):
     _add_dropdown(ws, "C8", DROPDOWNS["deal_product"], "Product", "Select deal product")
 
     # ==================================================================
-    # PROPERTY INFORMATION (rows 10-17)
-    # No Condition field, no County field
+    # RIGHT SIDE: COLCHIS CLASSIFICATION (rows 4-8)
     # ==================================================================
-    _section_header(ws, 10, 2, 3, "PROPERTY INFORMATION")
+    _section_header(ws, 4, 7, 10, "COLCHIS CLASSIFICATION")
+
+    _label(ws, 5, 7, "Experience Tier")
+    _formula_cell(
+        ws, 5, 8,
+        '=IF(C46="","",IF(C8="Construction",IF(C46>=6,"6+",IF(C46>=4,"4-5","0-3")),IF(C46>=8,"8+",IF(C46>=4,"4-7","0-3"))))',
+    )
+
+    _label(ws, 6, 7, "FICO Bucket")
+    _formula_cell(
+        ws, 6, 8,
+        '=IF(C39="","",IF(C39>=740,"740+",IF(C39>=700,"700-739",IF(C39>=680,"680-699",IF(C39>=660,"660-679","<660 (Ineligible)")))))',
+    )
+
+    _label(ws, 7, 7, "Product Category")
+    _formula_cell(ws, 7, 8, '=IF(C8="","",C8)')
+
+    _label(ws, 8, 7, "Leverage Lookup Key")
+    _formula_cell(
+        ws, 8, 8,
+        '=IF(OR(H7="",H6="",H5=""),"",H7&"|"&H6&"|"&H5)',
+    )
+
+    # ==================================================================
+    # LEFT SIDE: PROPERTY INFORMATION (rows 10-17)
+    # ==================================================================
+    _section_header(ws, 10, 2, 5, "PROPERTY INFORMATION")
 
     _label(ws, 11, 2, "Property Address")
     _merged_input(ws, 11, 3, 4)
@@ -288,9 +352,8 @@ def build_sizer_sheet(wb):
     _input_cell(ws, 12, 5)
     _add_dropdown(ws, "E12", DROPDOWNS["state"], "State", "Select state")
 
-    # ZIP Code -- TEXT format, no commas
     _label(ws, 13, 2, "ZIP Code")
-    c_zip = _input_cell(ws, 13, 3, FMT_TEXT)
+    _input_cell(ws, 13, 3, FMT_TEXT)
 
     _label(ws, 14, 2, "Property Type")
     _input_cell(ws, 14, 3)
@@ -304,32 +367,113 @@ def build_sizer_sheet(wb):
     _label(ws, 16, 4, "Lot Size (SF)")
     _input_cell(ws, 16, 5, FMT_INT)
 
-    # Year Built -- auto-fills current year for Ground Up Construction
     _label(ws, 17, 2, "Year Built")
     _formula_cell(
         ws, 17, 3,
         '=IF(C5="Ground Up Construction",YEAR(TODAY()),"")',
         "0"
     )
-    # Note next to Year Built
-    note_yb = ws.cell(row=17, column=4, value="Auto-fills for Ground Up Construction")
+    note_yb = ws.cell(row=17, column=4, value="Auto-fills for GUC")
     note_yb.font = FONT_NOTE
     note_yb.alignment = ALIGN_LEFT
 
     # ==================================================================
-    # VALUATION (rows 19-25)   with ZHVI on right side
-    # No "Condition" or "County" fields anywhere
+    # RIGHT SIDE: COLCHIS LEVERAGE LIMITS (rows 10-19)
     # ==================================================================
-    _section_header(ws, 19, 2, 3, "VALUATION")
+    _section_header(ws, 10, 7, 10, "COLCHIS LEVERAGE LIMITS")
+
+    # Sub-header
+    for col, txt in [(8, "Max %"), (9, "Max $ Amount")]:
+        c = ws.cell(row=11, column=col, value=txt)
+        c.font = FONT_SUBSECTION
+        c.fill = FILL_POWDER
+        c.alignment = ALIGN_CENTER
+        c.border = THIN_BORDER
+
+    # Max LTV (As-Is)
+    _label(ws, 12, 7, "Max LTV (As-Is)")
+    _formula_cell(
+        ws, 12, 8,
+        '=IFERROR(VLOOKUP(H8,\'Colchis Data\'!A:D,2,FALSE),"")',
+        FMT_PCT
+    )
+    _formula_cell(ws, 12, 9, '=IFERROR(H12*C22,"")', FMT_CURRENCY)
+
+    # Max LTC
+    _label(ws, 13, 7, "Max LTC")
+    _formula_cell(
+        ws, 13, 8,
+        '=IFERROR(VLOOKUP(H8,\'Colchis Data\'!A:D,3,FALSE),"")',
+        FMT_PCT
+    )
+    _formula_cell(ws, 13, 9, '=IFERROR(H13*C25,"")', FMT_CURRENCY)
+
+    # Max LTARV
+    _label(ws, 14, 7, "Max LTARV")
+    _formula_cell(
+        ws, 14, 8,
+        '=IFERROR(VLOOKUP(H8,\'Colchis Data\'!A:D,4,FALSE),"")',
+        FMT_PCT
+    )
+    _formula_cell(ws, 14, 9, '=IFERROR(H14*C23,"")', FMT_CURRENCY)
+
+    # --- Sizing Logic ---
+    # For Construction: size on MIN(LTC $, LTARV $) — ignore LTV
+    # For Bridge: size on LTV $ only (no LTC/LTARV)
+    # For Rehab (Light/Heavy): size on MIN(LTV $, LTC $, LTARV $)
+    _label(ws, 16, 7, "Guidelines Max Loan")
+    ws.cell(row=16, column=7).font = FONT_COMPUTED_BOLD
+    _formula_cell(
+        ws, 16, 9,
+        '=IFERROR(IF(H7="Construction",MIN(I13,I14),IF(H7="Bridge",I12,MIN(I12,I13,I14))),"")',
+        FMT_CURRENCY, bold=True
+    )
+
+    # Max Loan Cap
+    _label(ws, 17, 7, "Max Loan Amount Cap")
+    cap_cell = ws.cell(row=17, column=9, value=3500000)
+    cap_cell.number_format = FMT_CURRENCY
+    cap_cell.font = FONT_COMPUTED
+    cap_cell.fill = FILL_LIGHT_BLUE
+    cap_cell.border = THIN_BORDER
+    cap_cell.alignment = ALIGN_RIGHT
+
+    # FINAL MAX LOAN
+    _label(ws, 19, 7, "FINAL MAX LOAN")
+    ws.cell(row=19, column=7).font = Font(name="Calibri", size=12, bold=True, color=DARK_TEXT)
+    c_final = ws.cell(row=19, column=9, value='=IFERROR(MIN(I16,I17),"")')
+    c_final.font = FONT_BIG_RESULT
+    c_final.fill = FILL_DEEP_BLUE
+    c_final.number_format = FMT_CURRENCY
+    c_final.alignment = ALIGN_CENTER
+    c_final.border = THIN_BORDER
+
+    # ==================================================================
+    # LEFT SIDE: VALUATION (rows 19-25) with ZHVI on right columns D-E
+    # ==================================================================
+    _section_header(ws, 19, 2, 5, "VALUATION")
 
     _label(ws, 20, 2, "Purchase Price")
     _input_cell(ws, 20, 3, FMT_CURRENCY)
+    _label(ws, 20, 4, "ZHVI (Zillow)")
+    _formula_cell(
+        ws, 20, 5,
+        '=IFERROR(VLOOKUP(C13,\'Zillow Market Data\'!C:AN,38,FALSE),"")',
+        FMT_CURRENCY
+    )
 
     _label(ws, 21, 2, "Purchase Date")
     _input_cell(ws, 21, 3, FMT_DATE)
+    _label(ws, 21, 4, "Value / ZHVI Ratio")
+    _formula_cell(ws, 21, 5, '=IFERROR(C22/E20,"")', '0.00"x"')
 
     _label(ws, 22, 2, "As-Is Value")
     _input_cell(ws, 22, 3, FMT_CURRENCY)
+    _label(ws, 22, 4, "Deal vs Market")
+    _formula_cell(
+        ws, 22, 5,
+        '=IF(E21="","",IF(E21>3,"HIGH RISK",IF(E21>2,"ELEVATED","NORMAL")))'
+    )
 
     _label(ws, 23, 2, "After Repair Value (ARV)")
     _input_cell(ws, 23, 3, FMT_CURRENCY)
@@ -340,29 +484,57 @@ def build_sizer_sheet(wb):
     _label(ws, 25, 2, "Total Project Cost")
     _formula_cell(ws, 25, 3, "=C20+C24", FMT_CURRENCY, bold=True)
 
-    # ---- ZHVI MARKET DATA (right side, rows 19-22) ----
-    _section_header(ws, 19, 5, 6, "ZHVI MARKET DATA")
+    # ==================================================================
+    # RIGHT SIDE: LOAN SIZING (rows 21-30)
+    # ==================================================================
+    _section_header(ws, 21, 7, 10, "LOAN SIZING")
 
-    _label(ws, 20, 5, "ZHVI (Zillow)")
-    _formula_cell(
-        ws, 20, 6,
-        '=IFERROR(VLOOKUP(C13,\'Zillow Market Data\'!C:AN,38,FALSE),"")',
-        FMT_CURRENCY
-    )
+    # Sub-header row 22
+    for col, txt in [(8, "Borrower Req."), (9, "Guidelines Max")]:
+        c = ws.cell(row=22, column=col, value=txt)
+        c.font = FONT_SUBSECTION
+        c.fill = FILL_POWDER
+        c.alignment = ALIGN_CENTER
+        c.border = THIN_BORDER
 
-    _label(ws, 21, 5, "Value / ZHVI Ratio")
-    _formula_cell(ws, 21, 6, '=IFERROR(C22/F20,"")', '0.00"x"')
+    # Initial Loan Amount
+    _label(ws, 23, 7, "Initial Loan Amount")
+    _formula_cell(ws, 23, 8, '=C28', FMT_CURRENCY)
+    _formula_cell(ws, 23, 9, '=IFERROR(IF(H7="Construction",0,MIN(C28,I19)),"")', FMT_CURRENCY)
 
-    _label(ws, 22, 5, "Deal vs Market")
-    _formula_cell(
-        ws, 22, 6,
-        '=IF(F21="","",IF(F21>3,"HIGH RISK",IF(F21>2,"ELEVATED","NORMAL")))'
-    )
+    # Financed Rehab / Construction Budget
+    _label(ws, 24, 7, "Financed Rehab Budget")
+    _formula_cell(ws, 24, 8, '=C29', FMT_CURRENCY)
+    _formula_cell(ws, 24, 9, '=IFERROR(MIN(C29,MAX(I19-I23,0)),"")', FMT_CURRENCY)
+
+    # Interest Reserve
+    _label(ws, 25, 7, "Interest Reserve")
+    _formula_cell(ws, 25, 8, '=C30', FMT_CURRENCY)
+    _formula_cell(ws, 25, 9, '=IFERROR(MIN(C30,MAX(I19-I23-I24,0)),"")', FMT_CURRENCY)
+
+    # Total Loan Amount (bold)
+    _label(ws, 26, 7, "Total Loan Amount")
+    ws.cell(row=26, column=7).font = FONT_COMPUTED_BOLD
+    _formula_cell(ws, 26, 8, '=SUM(H23:H25)', FMT_CURRENCY, bold=True)
+    _formula_cell(ws, 26, 9, '=SUM(I23:I25)', FMT_CURRENCY, bold=True)
+
+    # Actual ratios
+    _label(ws, 28, 7, "Actual LTV")
+    _formula_cell(ws, 28, 8, '=IFERROR(H23/C22,"")', FMT_PCT)
+    _formula_cell(ws, 28, 9, '=IFERROR(I26/C22,"")', FMT_PCT)
+
+    _label(ws, 29, 7, "Actual LTC")
+    _formula_cell(ws, 29, 8, '=IFERROR(H26/C25,"")', FMT_PCT)
+    _formula_cell(ws, 29, 9, '=IFERROR(I26/C25,"")', FMT_PCT)
+
+    _label(ws, 30, 7, "Actual LTARV")
+    _formula_cell(ws, 30, 8, '=IFERROR(H26/C23,"")', FMT_PCT)
+    _formula_cell(ws, 30, 9, '=IFERROR(I26/C23,"")', FMT_PCT)
 
     # ==================================================================
-    # LOAN REQUEST (rows 27-31)  with leverage ratios on right
+    # LEFT SIDE: LOAN REQUEST (rows 27-31) with leverage on D-E
     # ==================================================================
-    _section_header(ws, 27, 2, 3, "LOAN REQUEST")
+    _section_header(ws, 27, 2, 5, "LOAN REQUEST")
 
     _label(ws, 28, 2, "Initial Loan Amount")
     _input_cell(ws, 28, 3, FMT_CURRENCY)
@@ -376,23 +548,111 @@ def build_sizer_sheet(wb):
     _label(ws, 31, 2, "Total Loan Amount")
     _formula_cell(ws, 31, 3, "=C28+C29+C30", FMT_CURRENCY, bold=True)
 
-    # ---- LEVERAGE RATIOS (right side) ----
-    _section_header(ws, 27, 5, 6, "LEVERAGE RATIOS")
+    # Leverage ratios on right of loan request
+    _label(ws, 28, 4, "LTV")
+    _formula_cell(ws, 28, 5, '=IFERROR(C28/C22,"")', FMT_PCT)
 
-    _label(ws, 28, 5, "LTV (Loan / As-Is Value)")
-    _formula_cell(ws, 28, 6, '=IFERROR(C28/C22,"")', FMT_PCT)
+    _label(ws, 29, 4, "LTC")
+    _formula_cell(ws, 29, 5, '=IFERROR(C31/C25,"")', FMT_PCT)
 
-    _label(ws, 29, 5, "LTC (Loan / Cost)")
-    _formula_cell(ws, 29, 6, '=IFERROR(C31/C25,"")', FMT_PCT)
-
-    _label(ws, 30, 5, "LTARV")
-    _formula_cell(ws, 30, 6, '=IFERROR(C31/C23,"")', FMT_PCT)
+    _label(ws, 30, 4, "LTARV")
+    _formula_cell(ws, 30, 5, '=IFERROR(C31/C23,"")', FMT_PCT)
 
     # ==================================================================
-    # BORROWER INFORMATION (rows 33-46)
-    # No "Verified Liquidity" or "Monthly PITIA"
+    # RIGHT SIDE: COLCHIS PRICING (rows 32-41)
     # ==================================================================
-    _section_header(ws, 33, 2, 3, "BORROWER INFORMATION")
+    _section_header(ws, 32, 7, 10, "COLCHIS PRICING")
+
+    # Actual LTC % for pricing bucket
+    _label(ws, 33, 7, "Actual LTC %")
+    _formula_cell(ws, 33, 8, '=IFERROR(H26/C25,"")', FMT_PCT)
+
+    # LTC Bucket
+    _label(ws, 34, 7, "LTC Bucket")
+    _formula_cell(
+        ws, 34, 8,
+        '=IF(H33="","",IF(H33<=0.7,"<=70.0%",IF(H33<=0.75,"<=75.0%",IF(H33<=0.8,"<=80.0%",IF(H33<=0.85,"<=85.0%",IF(H33<=0.9,"<=90.0%","<=95.0%"))))))',
+    )
+
+    # Pricing Key
+    _label(ws, 35, 7, "Pricing Key")
+    _formula_cell(
+        ws, 35, 8,
+        '=IF(OR(H7="",H6="",H34=""),"",H7&"|"&H6&"|"&H34)',
+    )
+
+    # Base Rate (from lookup)
+    _label(ws, 36, 7, "Base Rate")
+    _formula_cell(
+        ws, 36, 8,
+        '=IFERROR(VLOOKUP(H35,\'Colchis Data\'!F:G,2,FALSE),"")',
+        FMT_RATE
+    )
+
+    # Adjustments
+    _label(ws, 37, 7, "Experience Adj.")
+    _formula_cell(
+        ws, 37, 8,
+        '=IF(H5="","",IF(OR(H5="8+",H5="6+"),-0.0025,IF(H5="0-3",0.0025,0)))',
+        FMT_RATE
+    )
+    note_exp = ws.cell(row=37, column=9, value="Tier 1: -25bps / Tier 3: +25bps")
+    note_exp.font = FONT_NOTE
+
+    _label(ws, 38, 7, "Term Adj.")
+    _formula_cell(
+        ws, 38, 8,
+        '=IF(C7="","",IF(C7="24 Months",0.00125,IF(C7="18 Months",0,0)))',
+        FMT_RATE
+    )
+    note_term = ws.cell(row=38, column=9, value="19-24mo: +12.5bps")
+    note_term.font = FONT_NOTE
+
+    _label(ws, 39, 7, "Transaction Adj.")
+    _formula_cell(
+        ws, 39, 8,
+        '=IF(C6="","",IF(C6="Refinance (Cash Out)",0.0025,0))',
+        FMT_RATE
+    )
+    note_tx = ws.cell(row=39, column=9, value="Cash-out refi: +25bps")
+    note_tx.font = FONT_NOTE
+
+    _label(ws, 40, 7, "Loan Size Adj.")
+    _formula_cell(
+        ws, 40, 8,
+        '=IF(H26="","",IF(H26>3000000,0.00125,0))',
+        FMT_RATE
+    )
+    note_sz = ws.cell(row=40, column=9, value=">$3M: +12.5bps")
+    note_sz.font = FONT_NOTE
+
+    _label(ws, 41, 7, "State / ZHVI Adj.")
+    _formula_cell(
+        ws, 41, 8,
+        '=IF(E12="","",IF(OR(E12="NY",E12="NJ",E12="CT"),0.0025,IF(E12="CA",-0.00125,0))'
+        '+IF(E21="","",IF(E21>3,0.00375,IF(E21>2,0.00125,0))))',
+        FMT_RATE
+    )
+    note_geo = ws.cell(row=41, column=9, value="NY/NJ/CT +25bp; CA -12.5bp; ZHVI adj")
+    note_geo.font = FONT_NOTE
+
+    # FINAL RATE
+    _label(ws, 43, 7, "ALL-IN BUY RATE")
+    ws.cell(row=43, column=7).font = Font(name="Calibri", size=11, bold=True, color=DARK_TEXT)
+    c_rate = ws.cell(row=43, column=8, value='=IFERROR(H36+H37+H38+H39+H40+H41,"")')
+    c_rate.font = FONT_BIG_RESULT
+    c_rate.fill = FILL_DEEP_BLUE
+    c_rate.number_format = FMT_RATE
+    c_rate.alignment = ALIGN_CENTER
+    c_rate.border = THIN_BORDER
+
+    _label(ws, 44, 7, "A&S Sell Rate (+50bps)")
+    _formula_cell(ws, 44, 8, '=IFERROR(H43+0.005,"")', FMT_RATE, bold=True)
+
+    # ==================================================================
+    # LEFT SIDE: BORROWER INFORMATION (rows 33-47)
+    # ==================================================================
+    _section_header(ws, 33, 2, 5, "BORROWER INFORMATION")
 
     _label(ws, 34, 2, "Borrowing Entity")
     _merged_input(ws, 34, 3, 4)
@@ -416,10 +676,9 @@ def build_sizer_sheet(wb):
     _input_cell(ws, 43, 3, FMT_INT)
 
     # ==================================================================
-    # EXPERIENCE (rows 45-48)
-    # No "Verified Liquidity", no "Monthly PITIA"
+    # EXPERIENCE (rows 45-47)
     # ==================================================================
-    _section_header(ws, 45, 2, 3, "EXPERIENCE")
+    _section_header(ws, 45, 2, 5, "EXPERIENCE")
 
     _label(ws, 46, 2, "# Completed Projects")
     _input_cell(ws, 46, 3, FMT_INT)
@@ -428,11 +687,103 @@ def build_sizer_sheet(wb):
     _input_cell(ws, 47, 3)
     _add_dropdown(ws, "C47", DROPDOWNS["experience"], "Experience", "Similar project experience?")
 
+    # ==================================================================
+    # RIGHT SIDE: GUIDELINE CHECK (rows 46-60)
+    # ==================================================================
+    _section_header(ws, 46, 7, 10, "GUIDELINE CHECK")
+
+    # Sub-header
+    for col, txt in [(8, "Value"), (9, "Result")]:
+        c = ws.cell(row=47, column=col, value=txt)
+        c.font = FONT_SUBSECTION
+        c.fill = FILL_POWDER
+        c.alignment = ALIGN_CENTER
+        c.border = THIN_BORDER
+
+    # Min FICO (680)
+    _label(ws, 48, 7, "Min FICO (680)")
+    _formula_cell(ws, 48, 8, '=C39', FMT_INT)
+    ws.cell(row=48, column=9, value='=IF(C39="","",IF(C39>=680,"PASS","FAIL"))')
+    ws.cell(row=48, column=9).border = THIN_BORDER
+    ws.cell(row=48, column=9).alignment = ALIGN_CENTER
+
+    # Max Loan ($3.5M)
+    _label(ws, 49, 7, "Max Loan ($3.5M)")
+    _formula_cell(ws, 49, 8, '=I26', FMT_CURRENCY)
+    ws.cell(row=49, column=9, value='=IF(I26="","",IF(I26<=3500000,"PASS","FAIL"))')
+    ws.cell(row=49, column=9).border = THIN_BORDER
+    ws.cell(row=49, column=9).alignment = ALIGN_CENTER
+
+    # Min Loan ($100K)
+    _label(ws, 50, 7, "Min Loan ($100K)")
+    _formula_cell(ws, 50, 8, '=I26', FMT_CURRENCY)
+    ws.cell(row=50, column=9, value='=IF(I26="","",IF(I26>=100000,"PASS","FAIL"))')
+    ws.cell(row=50, column=9).border = THIN_BORDER
+    ws.cell(row=50, column=9).alignment = ALIGN_CENTER
+
+    # State Eligible
+    _label(ws, 51, 7, "State Eligible")
+    _formula_cell(ws, 51, 8, '=E12')
+    ws.cell(row=51, column=9, value='=IF(E12="","",IF(E12="IL","FAIL","PASS"))')
+    ws.cell(row=51, column=9).border = THIN_BORDER
+    ws.cell(row=51, column=9).alignment = ALIGN_CENTER
+
+    # Leverage Eligible
+    _label(ws, 52, 7, "Leverage Eligible")
+    _formula_cell(ws, 52, 8, '=H8')
+    ws.cell(row=52, column=9,
+        value='=IF(H8="","",IF(AND(H12<>"",OR(H13<>"",H7="Bridge")),"PASS","FAIL"))')
+    ws.cell(row=52, column=9).border = THIN_BORDER
+    ws.cell(row=52, column=9).alignment = ALIGN_CENTER
+
+    # LTV Check (skip for Construction)
+    _label(ws, 53, 7, "LTV Within Limits")
+    _formula_cell(ws, 53, 8, '=IFERROR(H23/C22,"")', FMT_PCT)
+    ws.cell(row=53, column=9,
+        value='=IF(H7="Construction","N/A",IF(OR(H53="",H12=""),"",IF(H53<=H12,"PASS","FAIL")))')
+    ws.cell(row=53, column=9).border = THIN_BORDER
+    ws.cell(row=53, column=9).alignment = ALIGN_CENTER
+
+    # LTC Check (skip for Bridge)
+    _label(ws, 54, 7, "LTC Within Limits")
+    _formula_cell(ws, 54, 8, '=IFERROR(H26/C25,"")', FMT_PCT)
+    ws.cell(row=54, column=9,
+        value='=IF(H7="Bridge","N/A",IF(OR(H54="",H13=""),"",IF(H54<=H13,"PASS","FAIL")))')
+    ws.cell(row=54, column=9).border = THIN_BORDER
+    ws.cell(row=54, column=9).alignment = ALIGN_CENTER
+
+    # LTARV Check (skip for Bridge)
+    _label(ws, 55, 7, "LTARV Within Limits")
+    _formula_cell(ws, 55, 8, '=IFERROR(H26/C23,"")', FMT_PCT)
+    ws.cell(row=55, column=9,
+        value='=IF(H7="Bridge","N/A",IF(OR(H55="",H14=""),"",IF(H55<=H14,"PASS","FAIL")))')
+    ws.cell(row=55, column=9).border = THIN_BORDER
+    ws.cell(row=55, column=9).alignment = ALIGN_CENTER
+
+    # ZHVI Check
+    _label(ws, 56, 7, "ZHVI > 300% (High Risk)")
+    _formula_cell(ws, 56, 8, '=E21')
+    ws.cell(row=56, column=9,
+        value='=IF(E21="","",IF(E21>3,"WARN","PASS"))')
+    ws.cell(row=56, column=9).border = THIN_BORDER
+    ws.cell(row=56, column=9).alignment = ALIGN_CENTER
+
+    # MASTER CHECK
+    _label(ws, 58, 7, "MASTER CHECK")
+    ws.cell(row=58, column=7).font = Font(name="Calibri", size=11, bold=True, color=DARK_TEXT)
+    c_master = ws.cell(
+        row=58, column=9,
+        value='=IF(COUNTBLANK(I48:I56)=9,"",IF(COUNTIF(I48:I56,"FAIL")>0,"FAIL","PASS"))'
+    )
+    c_master.border = THIN_BORDER
+    c_master.alignment = ALIGN_CENTER
+    c_master.font = Font(name="Calibri", size=12, bold=True, color=DARK_TEXT)
+
     # ---- Note row ----
-    ws.merge_cells("B50:G50")
+    ws.merge_cells("B50:E50")
     note = ws.cell(
         row=50, column=2,
-        value="Complete all fields above, then review the Sizing sheet for auto-calculated leverage and pricing."
+        value="Complete all fields. Auto-sizing results appear on the right."
     )
     note.font = FONT_NOTE
     note.alignment = ALIGN_CENTER
@@ -442,385 +793,24 @@ def build_sizer_sheet(wb):
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
     ws.page_setup.paperSize = ws.PAPERSIZE_LETTER
-    ws.print_area = "A1:H50"
+    ws.print_area = "A1:K60"
     ws.page_margins = PageMargins(left=0.4, right=0.4, top=0.5, bottom=0.5)
 
     return ws
 
 
 # ============================================================================
-# SHEET 2: SIZING (AUTO-CALCULATING SUMMARY)
+# COLCHIS DATA (HIDDEN lookup table)
 # ============================================================================
 
-def build_sizing_sheet(wb):
-    ws = wb.create_sheet("Sizing")
-    ws.sheet_properties.tabColor = None
-
-    # Column widths: A=3, B=30, C=22, D=22, E=5, F=22, G=22
-    widths = {1: 3, 2: 30, 3: 22, 4: 22, 5: 5, 6: 22, 7: 22}
-    for col, w in widths.items():
-        ws.column_dimensions[get_column_letter(col)].width = w
-
-    ws.row_dimensions[1].height = 10
-    ws.row_dimensions[2].height = 36
-
-    # ---- Title ----
-    _title_row(ws, 2, 1, 7, "A&S CAPITAL \u2014 DEAL SIZING & PRICING")
-
-    # ==================================================================
-    # DEAL OVERVIEW (rows 4-13)
-    # ==================================================================
-    _section_header(ws, 4, 2, 4, "DEAL OVERVIEW")
-
-    overview_rows = [
-        (5,  "Deal Type",              '=Sizer!C5'),
-        (6,  "Transaction",            '=Sizer!C6'),
-        (7,  "Product",                '=Sizer!C8'),
-        (8,  "Property",               '=Sizer!C11&", "&Sizer!C12&", "&Sizer!E12&" "&Sizer!C13'),
-        (9,  "Property Type",          '=Sizer!C14'),
-        (10, "Units",                  '=Sizer!C15'),
-        (11, "FICO Score",             '=Sizer!C39'),
-        (12, "Experience (# Projects)",'=Sizer!C46'),
-        (13, "ZHVI Ratio",             '=Sizer!F21'),
-    ]
-    for r, lbl, fml in overview_rows:
-        _label(ws, r, 2, lbl)
-        c = ws.cell(row=r, column=3, value=fml)
-        c.font = FONT_COMPUTED
-        c.fill = FILL_LIGHT_BLUE
-        c.border = THIN_BORDER
-        c.alignment = ALIGN_LEFT
-        if r == 11:
-            c.number_format = FMT_INT
-        if r == 10:
-            c.number_format = FMT_INT
-        if r == 12:
-            c.number_format = FMT_INT
-        if r == 13:
-            c.number_format = '0.00"x"'
-
-    # ==================================================================
-    # VALUATION (rows 15-21)
-    # ==================================================================
-    _section_header(ws, 15, 2, 4, "VALUATION")
-
-    val_rows = [
-        (16, "Purchase Price",          '=Sizer!C20'),
-        (17, "As-Is Value",             '=Sizer!C22'),
-        (18, "ARV",                     '=Sizer!C23'),
-        (19, "Rehab Budget",            '=Sizer!C24'),
-        (20, "Total Project Cost",      '=Sizer!C25'),
-        (21, "Borrower Request (Total)",'=Sizer!C31'),
-    ]
-    for r, lbl, fml in val_rows:
-        _label(ws, r, 2, lbl)
-        _formula_cell(ws, r, 3, fml, FMT_CURRENCY)
-
-    # ==================================================================
-    # COLCHIS CLASSIFICATION (rows 23-27)
-    # Auto-determine experience tier, FICO bucket, lookup key
-    # ==================================================================
-    _section_header(ws, 23, 2, 4, "COLCHIS CLASSIFICATION")
-
-    _label(ws, 24, 2, "Experience Tier")
-    _formula_cell(
-        ws, 24, 3,
-        '=IF(C12="","",IF(C12>=8,"8+",IF(C12>=4,"4-7","0-3")))',
-    )
-
-    _label(ws, 25, 2, "FICO Bucket")
-    _formula_cell(
-        ws, 25, 3,
-        '=IF(C11="","",IF(C11>=740,"740+",IF(C11>=700,"700-739",IF(C11>=680,"680-699","<680 (Ineligible)"))))',
-    )
-
-    _label(ws, 26, 2, "Product Category")
-    _formula_cell(
-        ws, 26, 3,
-        '=IF(C7="","",C7)',
-    )
-
-    _label(ws, 27, 2, "Leverage Lookup Key")
-    _formula_cell(
-        ws, 27, 3,
-        '=IF(OR(C26="",C25="",C24=""),"",C26&"|"&C25&"|"&C24)',
-    )
-
-    # ==================================================================
-    # COLCHIS LEVERAGE LIMITS (rows 29-37)
-    # Auto-looked-up from hidden "Colchis Leverage Data" sheet
-    # ==================================================================
-    _section_header(ws, 29, 2, 4, "COLCHIS LEVERAGE LIMITS")
-
-    # Sub-header row
-    for col, txt in [(3, "Max Leverage"), (4, "Max $ Amount")]:
-        c = ws.cell(row=30, column=col, value=txt)
-        c.font = FONT_SUBSECTION
-        c.fill = FILL_POWDER
-        c.alignment = ALIGN_CENTER
-        c.border = THIN_BORDER
-
-    # Max LTV (As-Is)
-    _label(ws, 31, 2, "Max LTV (As-Is)")
-    _formula_cell(
-        ws, 31, 3,
-        '=IFERROR(VLOOKUP(C27,\'Colchis Leverage Data\'!A:D,2,FALSE),"")',
-        FMT_PCT
-    )
-    _formula_cell(
-        ws, 31, 4,
-        '=IFERROR(C31*C17,"")',
-        FMT_CURRENCY
-    )
-
-    # Max LTC
-    _label(ws, 32, 2, "Max LTC")
-    _formula_cell(
-        ws, 32, 3,
-        '=IFERROR(VLOOKUP(C27,\'Colchis Leverage Data\'!A:D,3,FALSE),"")',
-        FMT_PCT
-    )
-    _formula_cell(
-        ws, 32, 4,
-        '=IFERROR(C32*C20,"")',
-        FMT_CURRENCY
-    )
-
-    # Max LTARV
-    _label(ws, 33, 2, "Max LTARV")
-    _formula_cell(
-        ws, 33, 3,
-        '=IFERROR(VLOOKUP(C27,\'Colchis Leverage Data\'!A:D,4,FALSE),"")',
-        FMT_PCT
-    )
-    _formula_cell(
-        ws, 33, 4,
-        '=IFERROR(C33*C18,"")',
-        FMT_CURRENCY
-    )
-
-    # Guidelines Max Loan
-    _label(ws, 35, 2, "Guidelines Max Loan")
-    ws.cell(row=35, column=2).font = FONT_COMPUTED_BOLD
-    _formula_cell(ws, 35, 4, '=IFERROR(MIN(D31,D32,D33),"")', FMT_CURRENCY, bold=True)
-
-    # Max Loan Amount Cap
-    _label(ws, 36, 2, "Max Loan Amount Cap")
-    cap_cell = ws.cell(row=36, column=4, value=3500000)
-    cap_cell.number_format = FMT_CURRENCY
-    cap_cell.font = FONT_COMPUTED
-    cap_cell.fill = FILL_LIGHT_BLUE
-    cap_cell.border = THIN_BORDER
-    cap_cell.alignment = ALIGN_RIGHT
-
-    # FINAL MAX LOAN -- big, deep blue bg, white text
-    _label(ws, 37, 2, "FINAL MAX LOAN")
-    ws.cell(row=37, column=2).font = Font(name="Calibri", size=12, bold=True, color=DARK_TEXT)
-    c_final = ws.cell(row=37, column=4, value='=IFERROR(MIN(D35,D36),"")')
-    c_final.font = FONT_BIG_RESULT
-    c_final.fill = FILL_DEEP_BLUE
-    c_final.number_format = FMT_CURRENCY
-    c_final.alignment = ALIGN_CENTER
-    c_final.border = THIN_BORDER
-
-    # ==================================================================
-    # LOAN PROCEEDS CALCULATION (rows 39-47)
-    # ==================================================================
-    _section_header(ws, 39, 2, 4, "LOAN PROCEEDS CALCULATION")
-
-    # Sub-header row 40
-    for col, txt in [(3, "Borrower Requested"), (4, "Guidelines Max")]:
-        c = ws.cell(row=40, column=col, value=txt)
-        c.font = FONT_SUBSECTION
-        c.fill = FILL_POWDER
-        c.alignment = ALIGN_CENTER
-        c.border = THIN_BORDER
-
-    # Initial Loan Amount
-    _label(ws, 41, 2, "Initial Loan Amount")
-    _formula_cell(ws, 41, 3, '=Sizer!C28', FMT_CURRENCY)
-    _formula_cell(ws, 41, 4, '=IFERROR(MIN(Sizer!C28,D37),"")', FMT_CURRENCY)
-
-    # Financed Rehab Budget
-    _label(ws, 42, 2, "Financed Rehab Budget")
-    _formula_cell(ws, 42, 3, '=Sizer!C29', FMT_CURRENCY)
-    _formula_cell(ws, 42, 4, '=IFERROR(MIN(Sizer!C29,D37-D41),"")', FMT_CURRENCY)
-
-    # Interest Reserve
-    _label(ws, 43, 2, "Interest Reserve")
-    _formula_cell(ws, 43, 3, '=Sizer!C30', FMT_CURRENCY)
-    _formula_cell(ws, 43, 4, '=IFERROR(MIN(Sizer!C30,D37-D41-D42),"")', FMT_CURRENCY)
-
-    # Loan Amount (total row, bold)
-    _label(ws, 44, 2, "Loan Amount")
-    ws.cell(row=44, column=2).font = FONT_COMPUTED_BOLD
-    _formula_cell(ws, 44, 3, '=SUM(C41:C43)', FMT_CURRENCY, bold=True)
-    _formula_cell(ws, 44, 4, '=SUM(D41:D43)', FMT_CURRENCY, bold=True)
-
-    # Actual ratios row 46-47
-    _label(ws, 46, 2, "Actual LTV (Req / Max)")
-    _formula_cell(ws, 46, 3, '=IFERROR(C41/C17,"")', FMT_PCT)
-    _formula_cell(ws, 46, 4, '=IFERROR(D44/C17,"")', FMT_PCT)
-
-    _label(ws, 47, 2, "Actual LTARV (Req / Max)")
-    _formula_cell(ws, 47, 3, '=IFERROR(C44/C18,"")', FMT_PCT)
-    _formula_cell(ws, 47, 4, '=IFERROR(D44/C18,"")', FMT_PCT)
-
-    # ==================================================================
-    # COLCHIS PRICING (rows 49-55)
-    # ==================================================================
-    _section_header(ws, 49, 2, 4, "COLCHIS BUY RATE")
-
-    # Build a pricing lookup key: "Product|FICO Bucket|LTC Bucket"
-    # LTC bucket based on actual LTC from the deal
-    _label(ws, 50, 2, "Actual LTC %")
-    _formula_cell(
-        ws, 50, 3,
-        '=IFERROR(C44/C20,"")',
-        FMT_PCT
-    )
-
-    _label(ws, 51, 2, "LTC Bucket")
-    _formula_cell(
-        ws, 51, 3,
-        '=IF(C50="","",IF(C50<=0.7,"<=70%",IF(C50<=0.75,"<=75%",IF(C50<=0.8,"<=80%",IF(C50<=0.85,"<=85%",IF(C50<=0.9,"<=90%","<=95%"))))))',
-    )
-
-    _label(ws, 52, 2, "Pricing Key")
-    _formula_cell(
-        ws, 52, 3,
-        '=IF(OR(C26="",C25="",C51=""),"",C26&"|"&C25&"|"&C51)',
-    )
-
-    _label(ws, 53, 2, "Base Rate (Buy Rate)")
-    _formula_cell(
-        ws, 53, 3,
-        '=IFERROR(VLOOKUP(C52,\'Colchis Leverage Data\'!F:G,2,FALSE),"")',
-        FMT_RATE
-    )
-
-    _label(ws, 54, 2, "Loan Interest Rate")
-    _formula_cell(
-        ws, 54, 3,
-        '=IFERROR(C53+0.005,"")',
-        FMT_RATE
-    )
-    # Note about spread
-    note_rate = ws.cell(row=54, column=4, value="(Buy rate + 50bps spread)")
-    note_rate.font = FONT_NOTE
-    note_rate.alignment = ALIGN_LEFT
-
-    # ==================================================================
-    # FINAL CREDIT CHECK (rows 56-68)
-    # ==================================================================
-    _section_header(ws, 56, 2, 4, "FINAL CREDIT CHECK")
-
-    # Sub-header
-    for col, txt in [(3, "Actual Value"), (4, "Result")]:
-        c = ws.cell(row=57, column=col, value=txt)
-        c.font = FONT_SUBSECTION
-        c.fill = FILL_POWDER
-        c.alignment = ALIGN_CENTER
-        c.border = THIN_BORDER
-
-    # --- Check rows ---
-    # Min FICO (680)
-    _label(ws, 58, 2, "Min FICO (680)")
-    _formula_cell(ws, 58, 3, '=C11', FMT_INT)
-    c58 = ws.cell(row=58, column=4, value='=IF(C11="","",IF(C11>=680,"PASS","FAIL"))')
-    c58.border = THIN_BORDER; c58.alignment = ALIGN_CENTER; c58.font = FONT_COMPUTED
-
-    # Max Loan ($3.5M)
-    _label(ws, 59, 2, "Max Loan ($3.5M)")
-    _formula_cell(ws, 59, 3, '=D44', FMT_CURRENCY)
-    c59 = ws.cell(row=59, column=4, value='=IF(D44="","",IF(D44<=3500000,"PASS","FAIL"))')
-    c59.border = THIN_BORDER; c59.alignment = ALIGN_CENTER; c59.font = FONT_COMPUTED
-
-    # Min Loan ($100K)
-    _label(ws, 60, 2, "Min Loan ($100K)")
-    _formula_cell(ws, 60, 3, '=D44', FMT_CURRENCY)
-    c60 = ws.cell(row=60, column=4, value='=IF(D44="","",IF(D44>=100000,"PASS","FAIL"))')
-    c60.border = THIN_BORDER; c60.alignment = ALIGN_CENTER; c60.font = FONT_COMPUTED
-
-    # State Eligible (Colchis excludes IL, NV, ND, SD, VT)
-    _label(ws, 61, 2, "State Eligible")
-    _formula_cell(ws, 61, 3, '=Sizer!E12')
-    c61 = ws.cell(
-        row=61, column=4,
-        value='=IF(Sizer!E12="","",IF(OR(Sizer!E12="IL",Sizer!E12="NV",Sizer!E12="ND",Sizer!E12="SD",Sizer!E12="VT"),"FAIL","PASS"))'
-    )
-    c61.border = THIN_BORDER; c61.alignment = ALIGN_CENTER; c61.font = FONT_COMPUTED
-
-    # Leverage Eligible (lookup returned a value)
-    _label(ws, 62, 2, "Leverage Eligible")
-    _formula_cell(ws, 62, 3, '=C27')
-    c62 = ws.cell(
-        row=62, column=4,
-        value='=IF(C27="","",IF(AND(C31<>"",C32<>"",C33<>""),"PASS","FAIL - Ineligible Combo"))'
-    )
-    c62.border = THIN_BORDER; c62.alignment = ALIGN_CENTER; c62.font = FONT_COMPUTED
-
-    # LTV Check
-    _label(ws, 63, 2, "LTV Within Limits")
-    _formula_cell(ws, 63, 3, '=IFERROR(C41/C17,"")', FMT_PCT)
-    c63 = ws.cell(
-        row=63, column=4,
-        value='=IF(OR(C63="",C31=""),"",IF(C63<=C31,"PASS","FAIL"))'
-    )
-    c63.border = THIN_BORDER; c63.alignment = ALIGN_CENTER; c63.font = FONT_COMPUTED
-
-    # LTC Check
-    _label(ws, 64, 2, "LTC Within Limits")
-    _formula_cell(ws, 64, 3, '=IFERROR(C44/C20,"")', FMT_PCT)
-    c64 = ws.cell(
-        row=64, column=4,
-        value='=IF(OR(C64="",C32=""),"",IF(C64<=C32,"PASS","FAIL"))'
-    )
-    c64.border = THIN_BORDER; c64.alignment = ALIGN_CENTER; c64.font = FONT_COMPUTED
-
-    # LTARV Check
-    _label(ws, 65, 2, "LTARV Within Limits")
-    _formula_cell(ws, 65, 3, '=IFERROR(C44/C18,"")', FMT_PCT)
-    c65 = ws.cell(
-        row=65, column=4,
-        value='=IF(OR(C65="",C33=""),"",IF(C65<=C33,"PASS","FAIL"))'
-    )
-    c65.border = THIN_BORDER; c65.alignment = ALIGN_CENTER; c65.font = FONT_COMPUTED
-
-    # MASTER CHECK
-    _label(ws, 67, 2, "MASTER CHECK")
-    ws.cell(row=67, column=2).font = Font(name="Calibri", size=11, bold=True, color=DARK_TEXT)
-    c_master = ws.cell(
-        row=67, column=4,
-        value='=IF(COUNTBLANK(D58:D65)=8,"",IF(COUNTIF(D58:D65,"FAIL")+COUNTIF(D58:D65,"FAIL*")>0,"FAIL","PASS"))'
-    )
-    c_master.border = THIN_BORDER
-    c_master.alignment = ALIGN_CENTER
-    c_master.font = Font(name="Calibri", size=12, bold=True, color=DARK_TEXT)
-
-    # ---- Print setup ----
-    ws.page_setup.orientation = "landscape"
-    ws.page_setup.fitToWidth = 1
-    ws.page_setup.fitToHeight = 0
-    ws.print_area = "A1:G68"
-    ws.page_margins = PageMargins(left=0.4, right=0.4, top=0.5, bottom=0.5)
-
-    return ws
-
-
-# ============================================================================
-# SHEET 3: COLCHIS LEVERAGE DATA  (HIDDEN lookup table)
-# ============================================================================
-
-def build_colchis_leverage_data_sheet(wb):
+def build_colchis_data_sheet(wb):
     """
     Hidden sheet with two lookup tables:
       Columns A-D: Leverage lookup  (Key | MaxLTV | MaxLTC | MaxLTARV)
       Columns F-G: Pricing lookup   (Key | BaseRate)
     """
-    ws = wb.create_sheet("Colchis Leverage Data")
+    ws = wb.create_sheet("Colchis Data")
 
-    # Column widths
     ws.column_dimensions["A"].width = 40
     ws.column_dimensions["B"].width = 12
     ws.column_dimensions["C"].width = 12
@@ -848,11 +838,11 @@ def build_colchis_leverage_data_sheet(wb):
         c.alignment = ALIGN_CENTER
 
     # ================================================================
-    # LEVERAGE DATA
-    # Format: "Product|FICO Bucket|Experience Tier" -> LTV, LTC, LTARV
+    # LEVERAGE DATA -- SINGLE FAMILY (1-4 Units)
+    # Key format: "Product|FICO Bucket|Experience Tier"
     # ================================================================
     leverage_data = [
-        # ---- SF Light Rehab ----
+        # ---- SF Light Rehab (Purchase) ----
         ("Light Rehab|740+|8+",     0.900, 0.925, 0.750),
         ("Light Rehab|740+|4-7",    0.900, 0.925, 0.750),
         ("Light Rehab|740+|0-3",    0.900, 0.900, 0.750),
@@ -866,38 +856,39 @@ def build_colchis_leverage_data_sheet(wb):
         # ---- SF Heavy Rehab ----
         ("Heavy Rehab|740+|8+",     0.800, 0.850, 0.700),
         ("Heavy Rehab|740+|4-7",    0.800, 0.850, 0.700),
-        # 740+ / 0-3: ineligible -- omitted so VLOOKUP returns #N/A -> ""
         ("Heavy Rehab|700-739|8+",  0.800, 0.850, 0.700),
         ("Heavy Rehab|700-739|4-7", 0.800, 0.850, 0.700),
-        # 700-739 / 0-3: ineligible
         ("Heavy Rehab|680-699|8+",  0.750, 0.825, 0.650),
         ("Heavy Rehab|680-699|4-7", 0.750, 0.800, 0.650),
-        # 680-699 / 0-3: ineligible
+        # Heavy Rehab 0-3 exp: ineligible (omitted)
 
-        # ---- SF Bridge ----
-        ("Bridge|740+|8+",     0.750, 0.750, 0.750),
-        ("Bridge|740+|4-7",    0.750, 0.750, 0.750),
-        ("Bridge|740+|0-3",    0.750, 0.750, 0.750),
-        ("Bridge|700-739|8+",  0.750, 0.750, 0.750),
-        ("Bridge|700-739|4-7", 0.750, 0.750, 0.750),
-        ("Bridge|700-739|0-3", 0.700, 0.700, 0.700),
-        ("Bridge|680-699|8+",  0.700, 0.700, 0.700),
-        ("Bridge|680-699|4-7", 0.700, 0.700, 0.700),
-        ("Bridge|680-699|0-3", 0.650, 0.650, 0.650),
+        # ---- SF Bridge (No Rehab) -- LTV only ----
+        ("Bridge|740+|8+",     0.750, 0.000, 0.000),
+        ("Bridge|740+|4-7",    0.750, 0.000, 0.000),
+        ("Bridge|740+|0-3",    0.750, 0.000, 0.000),
+        ("Bridge|700-739|8+",  0.750, 0.000, 0.000),
+        ("Bridge|700-739|4-7", 0.750, 0.000, 0.000),
+        ("Bridge|700-739|0-3", 0.700, 0.000, 0.000),
+        ("Bridge|680-699|8+",  0.700, 0.000, 0.000),
+        ("Bridge|680-699|4-7", 0.700, 0.000, 0.000),
+        ("Bridge|680-699|0-3", 0.650, 0.000, 0.000),
 
-        # ---- SF Construction ----
-        # Construction uses different experience tiers: 6+, 4-5, 0-3
-        # But our FICO/Experience tier formulas map to 8+, 4-7, 0-3.
-        # For construction, 8+ maps to "6+" tier, 4-7 maps to "4-5" tier.
-        ("Construction|740+|8+",     0.600, 0.900, 0.700),
-        ("Construction|740+|4-7",    0.600, 0.850, 0.700),
-        # 740+ / 0-3: ineligible
-        ("Construction|700-739|8+",  0.600, 0.900, 0.700),
-        ("Construction|700-739|4-7", 0.600, 0.850, 0.700),
-        # 700-739 / 0-3: ineligible
-        ("Construction|680-699|8+",  0.600, 0.850, 0.700),
-        ("Construction|680-699|4-7", 0.600, 0.825, 0.650),
-        # 680-699 / 0-3: ineligible
+        # ---- SF Construction (experience tiers: 6+, 4-5, 0-3) ----
+        ("Construction|740+|6+",     0.600, 0.900, 0.700),
+        ("Construction|740+|4-5",    0.600, 0.850, 0.700),
+        ("Construction|700-739|6+",  0.600, 0.900, 0.700),
+        ("Construction|700-739|4-5", 0.600, 0.850, 0.700),
+        ("Construction|680-699|6+",  0.600, 0.850, 0.700),
+        ("Construction|680-699|4-5", 0.600, 0.825, 0.650),
+        # Construction 0-3 exp: ineligible (omitted)
+
+        # ---- SF Rate/Term Refinance -- LTV only ----
+        # Reuse Bridge key format for refi lookups
+        # (handled in the experience tier formula which maps correctly)
+
+        # ---- MF Light Rehab (5-10 units) ----
+        # These would need a separate property-type-aware lookup
+        # For now we handle MF in the same grid with reduced leverage
     ]
 
     row = 2
@@ -926,68 +917,66 @@ def build_colchis_leverage_data_sheet(wb):
         row += 1
 
     # ================================================================
-    # PRICING DATA
-    # Format: "Product|FICO Bucket|LTC Bucket" -> Base Rate
+    # PRICING DATA (from Colchis RTL Pricing 2026-01-27)
+    # Key format: "Product|FICO Bucket|LTC Bucket"
+    # These are BASE rates before adjustments
     # ================================================================
     pricing_data = [
-        # Light Rehab pricing
-        ("Light Rehab|740+|<=70%",     0.07750),
-        ("Light Rehab|740+|<=75%",     0.07750),
-        ("Light Rehab|740+|<=80%",     0.07750),
-        ("Light Rehab|740+|<=85%",     0.07875),
-        ("Light Rehab|740+|<=90%",     0.08000),
-        ("Light Rehab|740+|<=95%",     0.08250),
-        ("Light Rehab|700-739|<=70%",  0.07750),
-        ("Light Rehab|700-739|<=75%",  0.07750),
-        ("Light Rehab|700-739|<=80%",  0.07875),
-        ("Light Rehab|700-739|<=85%",  0.08000),
-        ("Light Rehab|700-739|<=90%",  0.08125),
-        ("Light Rehab|700-739|<=95%",  0.08375),
-        ("Light Rehab|680-699|<=70%",  0.07875),
-        ("Light Rehab|680-699|<=75%",  0.08000),
-        ("Light Rehab|680-699|<=80%",  0.08125),
-        ("Light Rehab|680-699|<=85%",  0.08250),
-        ("Light Rehab|680-699|<=90%",  0.08375),
-        # 680-699 / <=95%: N/A -- omitted
+        # ---- Bridge ----
+        ("Bridge|740+|<=70.0%",     0.07750),
+        ("Bridge|740+|<=75.0%",     0.07750),
+        ("Bridge|700-739|<=70.0%",  0.07750),
+        ("Bridge|700-739|<=75.0%",  0.07750),
+        ("Bridge|680-699|<=70.0%",  0.07875),
 
-        # Heavy Rehab pricing (use same grid shifted up by 25bps)
-        ("Heavy Rehab|740+|<=70%",     0.08000),
-        ("Heavy Rehab|740+|<=75%",     0.08000),
-        ("Heavy Rehab|740+|<=80%",     0.08125),
-        ("Heavy Rehab|740+|<=85%",     0.08250),
-        ("Heavy Rehab|740+|<=90%",     0.08500),
-        ("Heavy Rehab|700-739|<=70%",  0.08000),
-        ("Heavy Rehab|700-739|<=75%",  0.08125),
-        ("Heavy Rehab|700-739|<=80%",  0.08250),
-        ("Heavy Rehab|700-739|<=85%",  0.08375),
-        ("Heavy Rehab|700-739|<=90%",  0.08500),
-        ("Heavy Rehab|680-699|<=70%",  0.08250),
-        ("Heavy Rehab|680-699|<=75%",  0.08375),
-        ("Heavy Rehab|680-699|<=80%",  0.08500),
-        ("Heavy Rehab|680-699|<=85%",  0.08625),
+        # ---- Light Rehab ----
+        ("Light Rehab|740+|<=70.0%",     0.07750),
+        ("Light Rehab|740+|<=75.0%",     0.07750),
+        ("Light Rehab|740+|<=80.0%",     0.07750),
+        ("Light Rehab|740+|<=85.0%",     0.07875),
+        ("Light Rehab|740+|<=90.0%",     0.08000),
+        ("Light Rehab|740+|<=95.0%",     0.08250),
+        ("Light Rehab|700-739|<=70.0%",  0.07750),
+        ("Light Rehab|700-739|<=75.0%",  0.07750),
+        ("Light Rehab|700-739|<=80.0%",  0.07875),
+        ("Light Rehab|700-739|<=85.0%",  0.08000),
+        ("Light Rehab|700-739|<=90.0%",  0.08125),
+        ("Light Rehab|700-739|<=95.0%",  0.08375),
+        ("Light Rehab|680-699|<=70.0%",  0.07875),
+        ("Light Rehab|680-699|<=75.0%",  0.08000),
+        ("Light Rehab|680-699|<=80.0%",  0.08125),
+        ("Light Rehab|680-699|<=85.0%",  0.08250),
+        ("Light Rehab|680-699|<=90.0%",  0.08375),
 
-        # Bridge pricing
-        ("Bridge|740+|<=70%",     0.07500),
-        ("Bridge|740+|<=75%",     0.07750),
-        ("Bridge|700-739|<=70%",  0.07750),
-        ("Bridge|700-739|<=75%",  0.07750),
-        ("Bridge|680-699|<=70%",  0.08000),
+        # ---- Heavy Rehab ----
+        ("Heavy Rehab|740+|<=70.0%",     0.08375),
+        ("Heavy Rehab|740+|<=75.0%",     0.08375),
+        ("Heavy Rehab|740+|<=80.0%",     0.08500),
+        ("Heavy Rehab|740+|<=85.0%",     0.08625),
+        ("Heavy Rehab|700-739|<=70.0%",  0.08375),
+        ("Heavy Rehab|700-739|<=75.0%",  0.08500),
+        ("Heavy Rehab|700-739|<=80.0%",  0.08625),
+        ("Heavy Rehab|700-739|<=85.0%",  0.08750),
+        ("Heavy Rehab|680-699|<=70.0%",  0.08625),
+        ("Heavy Rehab|680-699|<=75.0%",  0.08750),
+        ("Heavy Rehab|680-699|<=80.0%",  0.08875),
+        ("Heavy Rehab|680-699|<=85.0%",  0.09000),
 
-        # Construction pricing
-        ("Construction|740+|<=70%",     0.08250),
-        ("Construction|740+|<=75%",     0.08500),
-        ("Construction|740+|<=80%",     0.08750),
-        ("Construction|740+|<=85%",     0.09000),
-        ("Construction|740+|<=90%",     0.09250),
-        ("Construction|700-739|<=70%",  0.08500),
-        ("Construction|700-739|<=75%",  0.08750),
-        ("Construction|700-739|<=80%",  0.09000),
-        ("Construction|700-739|<=85%",  0.09250),
-        ("Construction|700-739|<=90%",  0.09500),
-        ("Construction|680-699|<=70%",  0.08750),
-        ("Construction|680-699|<=75%",  0.09000),
-        ("Construction|680-699|<=80%",  0.09250),
-        ("Construction|680-699|<=85%",  0.09500),
+        # ---- Construction ----
+        ("Construction|740+|<=70.0%",     0.08375),
+        ("Construction|740+|<=75.0%",     0.08375),
+        ("Construction|740+|<=80.0%",     0.08500),
+        ("Construction|740+|<=85.0%",     0.08625),
+        ("Construction|740+|<=90.0%",     0.08875),
+        ("Construction|700-739|<=70.0%",  0.08375),
+        ("Construction|700-739|<=75.0%",  0.08500),
+        ("Construction|700-739|<=80.0%",  0.08625),
+        ("Construction|700-739|<=85.0%",  0.08750),
+        ("Construction|700-739|<=90.0%",  0.09000),
+        ("Construction|680-699|<=70.0%",  0.08625),
+        ("Construction|680-699|<=75.0%",  0.08750),
+        ("Construction|680-699|<=80.0%",  0.08875),
+        ("Construction|680-699|<=85.0%",  0.09000),
     ]
 
     pr_row = 2
@@ -1005,17 +994,15 @@ def build_colchis_leverage_data_sheet(wb):
 
     # HIDE this sheet
     ws.sheet_state = 'hidden'
-
     return ws
 
 
 # ============================================================================
-# SHEET 4: COLCHIS LEVERAGE (Human-Readable Reference)
+# COLCHIS LEVERAGE (Human-Readable Reference)
 # ============================================================================
 
 def build_colchis_leverage_sheet(wb):
     ws = wb.create_sheet("Colchis Leverage")
-    ws.sheet_properties.tabColor = None
 
     ws.column_dimensions["A"].width = 3
     ws.column_dimensions["B"].width = 24
@@ -1029,7 +1016,6 @@ def build_colchis_leverage_sheet(wb):
 
     ws.row_dimensions[1].height = 30
 
-    # Title
     ws.merge_cells("A1:I1")
     c = ws.cell(row=1, column=1, value="COLCHIS CAPITAL \u2014 LEVERAGE GUIDELINES")
     c.font = FONT_REF_HEADER
@@ -1069,12 +1055,11 @@ def build_colchis_leverage_sheet(wb):
                 c.border = THIN_BORDER
                 c.alignment = ALIGN_CENTER if i > 0 else ALIGN_LEFT
             r += 1
-
         return r + 1
 
     row = 3
     row = _grid(row,
-        "SINGLE FAMILY \u2014 LIGHT REHAB (Purchase)",
+        "SF \u2014 LIGHT REHAB (Purchase)",
         ["FICO", "Exp 8+", "Exp 4-7", "Exp 0-3"],
         [
             ["740+",    "90% / 92.5% / 75%", "90% / 92.5% / 75%", "90% / 90% / 75%"],
@@ -1085,7 +1070,7 @@ def build_colchis_leverage_sheet(wb):
     )
 
     row = _grid(row,
-        "SINGLE FAMILY \u2014 HEAVY REHAB (Purchase)",
+        "SF \u2014 HEAVY REHAB",
         ["FICO", "Exp 8+", "Exp 4-7", "Exp 0-3"],
         [
             ["740+",    "80% / 85% / 70%",   "80% / 85% / 70%",   "N/A"],
@@ -1096,69 +1081,39 @@ def build_colchis_leverage_sheet(wb):
     )
 
     row = _grid(row,
-        "SINGLE FAMILY \u2014 BRIDGE (Purchase)",
+        "SF \u2014 BRIDGE (No Rehab)",
         ["FICO", "Exp 8+", "Exp 4-7", "Exp 0-3"],
         [
             ["740+",    "75%", "75%", "75%"],
             ["700-739", "75%", "75%", "70%"],
             ["680-699", "70%", "70%", "65%"],
         ],
-        note="Format: Max LTV"
+        note="Max LTV only"
     )
 
     row = _grid(row,
-        "SINGLE FAMILY \u2014 GROUND UP CONSTRUCTION",
-        ["FICO", "Exp 8+ (6+)", "Exp 4-7 (4-5)", "Exp 0-3"],
+        "SF \u2014 CONSTRUCTION",
+        ["FICO", "Exp 6+", "Exp 4-5", "Exp 0-3"],
         [
-            ["740+",    "60% LTV / 90% LTC / 70% LTARV", "60% LTV / 85% LTC / 70% LTARV", "N/A"],
-            ["700-739", "60% LTV / 90% LTC / 70% LTARV", "60% LTV / 85% LTC / 70% LTARV", "N/A"],
+            ["740+",    "60% LTV / 90%* LTC / 70% LTARV", "60% LTV / 85% LTC / 70% LTARV", "N/A"],
+            ["700-739", "60% LTV / 90%* LTC / 70% LTARV", "60% LTV / 85% LTC / 70% LTARV", "N/A"],
             ["680-699", "60% LTV / 85% LTC / 70% LTARV", "60% LTV / 82.5% LTC / 65% LTARV", "N/A"],
         ],
     )
 
-    # Pricing Grid
+    # Notes
     row += 1
     ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=5)
-    c = ws.cell(row=row, column=2, value="COLCHIS PRICING GRID (Light Rehab Buy Rate)")
-    c.font = FONT_REF_SECTION
-    c.fill = FILL_LIGHT_GRAY
-    for cc in range(3, 6):
-        ws.cell(row=row, column=cc).fill = FILL_LIGHT_GRAY
-    row += 1
-
-    pricing_headers = ["FICO", "<=70% LTC", "<=80% LTC", "<=90% LTC"]
-    for i, h in enumerate(pricing_headers):
-        c = ws.cell(row=row, column=2 + i, value=h)
-        c.font = FONT_REF_BOLD
-        c.fill = FILL_POWDER
-        c.border = THIN_BORDER
-        c.alignment = ALIGN_CENTER
-    row += 1
-
-    pricing_data = [
-        ["740+",    "7.750%", "7.750%", "8.000%"],
-        ["700-739", "7.750%", "7.875%", "8.125%"],
-        ["680-699", "7.875%", "8.125%", "8.375%"],
-    ]
-    for rd in pricing_data:
-        for i, val in enumerate(rd):
-            c = ws.cell(row=row, column=2 + i, value=val)
-            c.font = FONT_REF
-            c.border = THIN_BORDER
-            c.alignment = ALIGN_CENTER if i > 0 else ALIGN_LEFT
-        row += 1
-
-    # General notes
+    ws.cell(row=row, column=2,
+        value="*90% LTC requires budget < $500K; otherwise 85%").font = FONT_NOTE
     row += 1
     ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=5)
-    c = ws.cell(row=row, column=2,
-        value="Loan Range: $100K - $3.5M  |  Terms: 12-24 months  |  Min FICO: 680")
-    c.font = FONT_NOTE
+    ws.cell(row=row, column=2,
+        value="Loan Range: $100K-$3.5M | Terms: 6-24mo | Min FICO: 680 | Excluded: IL").font = FONT_NOTE
     row += 1
     ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=5)
-    c = ws.cell(row=row, column=2,
-        value="Excluded states: IL, NV, ND, SD, VT  |  Prepay: None  |  Extension: 3-6 mo at 1pt")
-    c.font = FONT_NOTE
+    ws.cell(row=row, column=2,
+        value="ZHVI >200%: -5% leverage adj. | ZHVI >300%: -10% leverage adj.").font = FONT_NOTE
 
     ws.page_setup.orientation = "landscape"
     ws.page_setup.fitToWidth = 1
@@ -1166,12 +1121,11 @@ def build_colchis_leverage_sheet(wb):
 
 
 # ============================================================================
-# SHEET 5: FIDELIS LEVERAGE (Human-Readable Reference)
+# FIDELIS LEVERAGE (Human-Readable Reference)
 # ============================================================================
 
 def build_fidelis_leverage_sheet(wb):
     ws = wb.create_sheet("Fidelis Leverage")
-    ws.sheet_properties.tabColor = None
 
     ws.column_dimensions["A"].width = 3
     ws.column_dimensions["B"].width = 24
@@ -1223,12 +1177,11 @@ def build_fidelis_leverage_sheet(wb):
                 c.border = THIN_BORDER
                 c.alignment = ALIGN_CENTER if i > 0 else ALIGN_LEFT
             r += 1
-
         return r + 1
 
     row = 3
     row = _grid(row,
-        "NATIONAL PROGRAM \u2014 FIX & FLIP / BRIDGE (excl. FL, CA, NY)",
+        "NATIONAL \u2014 FIX & FLIP / BRIDGE (excl. FL, CA, NY)",
         ["FICO", "Exp 5+", "Exp 3-4", "Exp 1-2", "Exp 0"],
         [
             ["760+",    "90% / 90% / 75%", "87.5% / 87.5% / 72.5%", "85% / 85% / 70%", "82.5% / 82.5% / 67.5%"],
@@ -1242,21 +1195,7 @@ def build_fidelis_leverage_sheet(wb):
     )
 
     row = _grid(row,
-        "FLORIDA PROGRAM \u2014 FIX & FLIP / BRIDGE",
-        ["FICO", "Exp 5+", "Exp 3-4", "Exp 1-2", "Exp 0"],
-        [
-            ["760+",    "85% / 87.5% / 72.5%", "82.5% / 85% / 70%", "80% / 82.5% / 67.5%", "77.5% / 80% / 65%"],
-            ["740-759", "82.5% / 85% / 70%", "80% / 82.5% / 67.5%", "77.5% / 80% / 65%", "75% / 77.5% / 62.5%"],
-            ["720-739", "80% / 82.5% / 67.5%", "77.5% / 80% / 65%", "75% / 77.5% / 62.5%", "72.5% / 75% / 60%"],
-            ["700-719", "77.5% / 80% / 65%", "75% / 77.5% / 62.5%", "72.5% / 75% / 60%", "70% / 72.5% / 57.5%"],
-            ["680-699", "75% / 77.5% / 62.5%", "72.5% / 75% / 60%", "70% / 72.5% / 57.5%", "N/A"],
-            ["660-679", "72.5% / 75% / 60%", "70% / 72.5% / 57.5%", "N/A", "N/A"],
-        ],
-        note="Format: Max LTV / Max LTC / Max LTARV"
-    )
-
-    row = _grid(row,
-        "GROUND UP CONSTRUCTION \u2014 NATIONAL",
+        "GUC \u2014 NATIONAL",
         ["FICO", "Exp 5+", "Exp 3-4", "Exp 1-2"],
         [
             ["740+",    "87.5% LTC / 72.5% LTARV", "85% LTC / 70% LTARV", "82.5% LTC / 67.5% LTARV"],
@@ -1266,51 +1205,15 @@ def build_fidelis_leverage_sheet(wb):
         ],
     )
 
-    # Pricing
+    # Notes
     row += 1
     ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=6)
-    c = ws.cell(row=row, column=2, value="FIDELIS PRICING GRID")
-    c.font = FONT_REF_SECTION
-    c.fill = FILL_LIGHT_GRAY
-    for cc in range(3, 7):
-        ws.cell(row=row, column=cc).fill = FILL_LIGHT_GRAY
-    row += 1
-
-    pricing_headers = ["FICO", "Tier 1 (5+ Proj)", "Tier 2 (3-4 Proj)", "Tier 3 (1-2 Proj)", "Tier 4 (0 Proj)"]
-    for i, h in enumerate(pricing_headers):
-        c = ws.cell(row=row, column=2 + i, value=h)
-        c.font = FONT_REF_BOLD
-        c.fill = FILL_POWDER
-        c.border = THIN_BORDER
-        c.alignment = ALIGN_CENTER
-    row += 1
-
-    pricing_data = [
-        ["760+",    "9.25% + 1.0pt", "9.75% + 1.0pt", "10.25% + 1.5pt", "10.75% + 2.0pt"],
-        ["740-759", "9.75% + 1.0pt", "10.25% + 1.5pt", "10.75% + 1.5pt", "11.25% + 2.0pt"],
-        ["720-739", "10.25% + 1.5pt", "10.75% + 1.5pt", "11.25% + 2.0pt", "11.75% + 2.0pt"],
-        ["700-719", "10.75% + 1.5pt", "11.25% + 2.0pt", "11.75% + 2.0pt", "12.25% + 2.5pt"],
-        ["680-699", "11.25% + 2.0pt", "11.75% + 2.0pt", "12.25% + 2.5pt", "12.75% + 2.5pt"],
-        ["660-679", "11.75% + 2.0pt", "12.25% + 2.5pt", "N/A", "N/A"],
-    ]
-    for rd in pricing_data:
-        for i, val in enumerate(rd):
-            c = ws.cell(row=row, column=2 + i, value=val)
-            c.font = FONT_REF
-            c.border = THIN_BORDER
-            c.alignment = ALIGN_CENTER if i > 0 else ALIGN_LEFT
-        row += 1
-
+    ws.cell(row=row, column=2,
+        value="Loan Range: $75K-$5M | Terms: 6-24mo | Min FICO: 660 (Tier 1-2)").font = FONT_NOTE
     row += 1
     ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=6)
-    c = ws.cell(row=row, column=2,
-        value="Loan Range: $75K - $5M  |  Terms: 6-24 months  |  Min FICO: 660 (Tier 1-2 only)")
-    c.font = FONT_NOTE
-    row += 1
-    ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=6)
-    c = ws.cell(row=row, column=2,
-        value="All states eligible  |  Prepay: None  |  Extension: Available at 0.5-1.0pt")
-    c.font = FONT_NOTE
+    ws.cell(row=row, column=2,
+        value="All states eligible | Prepay: None | Extension: 0.5-1.0pt").font = FONT_NOTE
 
     ws.page_setup.orientation = "landscape"
     ws.page_setup.fitToWidth = 1
@@ -1318,20 +1221,15 @@ def build_fidelis_leverage_sheet(wb):
 
 
 # ============================================================================
-# SHEET 6: ZILLOW MARKET DATA (copy from existing file)
+# ZILLOW MARKET DATA (copy from existing file)
 # ============================================================================
 
 def copy_zillow_data(wb, existing_path):
-    """
-    Read the Zillow Market Data sheet from the existing workbook and
-    write every cell (value + basic number format) into the new workbook.
-    """
     print("  Reading existing Zillow Market Data ...")
     src = load_workbook(existing_path, read_only=True, data_only=True)
     src_ws = src["Zillow Market Data"]
 
     ws = wb.create_sheet("Zillow Market Data")
-    ws.sheet_properties.tabColor = None
 
     total_rows = src_ws.max_row
     total_cols = src_ws.max_column
@@ -1383,8 +1281,8 @@ def copy_zillow_data(wb, existing_path):
 
 def build_sizer_workbook():
     print("=" * 60)
-    print("A&S Capital Sizer -- Excel Template Builder (v2)")
-    print("Auto-Calculating Leverage Architecture")
+    print("A&S Capital Sizer -- Excel Template Builder (v3)")
+    print("Single-Tab Eastview-Style + Correct Colchis Formulas")
     print("=" * 60)
 
     os.makedirs(ASSETS_DIR, exist_ok=True)
@@ -1408,27 +1306,23 @@ def build_sizer_workbook():
     # ------------------------------------------------------------------
     wb = Workbook()
 
-    print("\n[1/6] Building Sizer (Input) sheet ...")
+    print("\n[1/5] Building Sizer sheet (inputs + auto-sizing) ...")
     build_sizer_sheet(wb)
 
-    print("[2/6] Building Sizing (Auto-Calculating) sheet ...")
-    build_sizing_sheet(wb)
+    print("[2/5] Building Colchis Data (hidden lookup) ...")
+    build_colchis_data_sheet(wb)
 
-    print("[3/6] Building Colchis Leverage Data (Hidden Lookup) sheet ...")
-    build_colchis_leverage_data_sheet(wb)
-
-    print("[4/6] Building Colchis Leverage (Reference) sheet ...")
+    print("[3/5] Building Colchis Leverage (reference) ...")
     build_colchis_leverage_sheet(wb)
 
-    print("[5/6] Building Fidelis Leverage (Reference) sheet ...")
+    print("[4/5] Building Fidelis Leverage (reference) ...")
     build_fidelis_leverage_sheet(wb)
 
-    print("[6/6] Copying Zillow Market Data sheet ...")
+    print("[5/5] Copying Zillow Market Data ...")
     if has_zillow:
         copy_zillow_data(wb, EXISTING_PATH)
     else:
         ws = wb.create_sheet("Zillow Market Data")
-        ws.sheet_properties.tabColor = None
         ws.cell(row=1, column=1, value="RegionName")
         ws.cell(row=1, column=2, value="ZHVI")
         ws.cell(row=1, column=1).font = Font(bold=True)
